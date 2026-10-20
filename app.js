@@ -338,7 +338,18 @@ function viewStudent() {
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${juz.map((p, i) => `<div style="text-align:center;font-size:12px;border:1.5px solid ${p ? 'var(--g2)' : 'var(--line)'};border-radius:12px;padding:6px 0;background:linear-gradient(to top,${p === 100 ? 'var(--g2)' : 'var(--g3)'} ${p}%,#fff ${p}%);color:${p === 100 ? '#fff' : 'var(--ink)'}"><b>${i + 1}</b><br><small>${p}%</small></div>`).join('')}</div>
     <p class="hint">اللون الممتلئ = الجزء محفوظ بالكامل</p></div>
   ${lastH ? `<div class="card"><h3>📍 آخر موضع حفظ</h3><div style="font-family:Amiri,serif;font-size:21px;color:var(--g1);font-weight:700">${recText(lastH)}</div></div>` : ''}
-  <div class="card"><h3>🕘 سجل التسميع (${recs.length})</h3>${recs.length ? `<div class="list">${recs.slice(0, 40).map(r => recCard(r, { noName: true })).join('')}</div>` : empty('📖', 'لا يوجد تسميع مسجل')}</div>`;
+  <div class="card"><h3>🕘 جدول التسميع (${recs.length})</h3>${staff()
+    ? (recs.length ? `<div class="list">${recs.slice(0, 40).map(r => recCard(r, { noName: true })).join('')}</div>` : empty('📖', 'لا يوجد تسميع مسجل'))
+    : recTable(recs)}</div>`;
+}
+function recTable(recs) {
+  const f = st.rf || 'all', rows = recs.filter(r => f === 'all' || r.type === f);
+  const seg = [['all', 'الكل'], ['hifz', '📖 حفظ'], ['review', '🔁 مراجعة']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="rfilter" data-id="${k}">${l}</button>`).join('');
+  return `<div class="seg" style="margin-bottom:10px">${seg}</div>` + (rows.length ? `<div class="tw"><table class="rt"><tr><th>التاريخ</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th></tr>
+    ${rows.map(r => { const d = parse(r.date); return `<tr><td><b>${fmtDay(d)}</b><br><small>${fmtS(d)}</small></td>
+      <td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : 'b-rev'}">${r.type === 'hifz' ? 'حفظ' : 'مراجعة'}</span></td>
+      <td style="text-align:start"><b>${Q.name(r.surah)}</b><br><small>${r.from}–${r.to} (${ayahs(r)} آية)</small>${r.note ? `<br><small>📝 ${esc(r.note)}</small>` : ''}</td>
+      <td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '—'}</td></tr>`; }).join('')}</table></div>` : empty('📖', 'لا يوجد تسميع مسجل'));
 }
 function weekReport(s) {
   const ws = weekStart(new Date()), a = ymd(ws), b = ymd(addDays(ws, 6));
@@ -517,6 +528,7 @@ const acts = {
     const s = student(id), p = db.users.find(u => s.parents.includes(u.id) && u.phone);
     window.open(`https://wa.me/${p ? waNum(p.phone) : ''}?text=${encodeURIComponent(weekReport(s))}`, '_blank');
   },
+  rfilter: id => { st.rf = id; render(); },
   mode: id => { st.mode = id; st.off = 0; render(); },
   prev: () => { st.off--; render(); },
   next: () => { if (st.off < 0) { st.off++; render(); } },
