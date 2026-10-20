@@ -1,0 +1,5 @@
+# منع الوصول المباشر للملفات الداخلية
+<FilesMatch "^(install\.php|quran\.php|schema\.sql)$">
+  Require all denied
+</FilesMatch>
+Options -Indexes

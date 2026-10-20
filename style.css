@@ -142,3 +142,22 @@ td:first-child,th:first-child{text-align:start}
 
 @media (min-width:700px){body{max-width:640px;margin:auto;box-shadow:0 0 40px rgba(0,0,0,.08)}.tabbar{max-width:640px;margin:auto}}
 @media print{.tabbar,.hdr,.btn{display:none!important}}
+
+/* ===== شارات، رسائل، تقدّم ===== */
+.tabbar button span{position:relative}
+.bdg{position:absolute;top:-4px;inset-inline-start:-10px;background:#e5484d;color:#fff;font-style:normal;font-size:11px;font-weight:800;min-width:18px;height:18px;line-height:18px;border-radius:9px;padding:0 5px;text-align:center}
+.bdg.inl{position:static;display:inline-block;margin-top:2px}
+.pbar{height:7px;background:var(--g3);border-radius:4px;margin:6px 0 2px;overflow:hidden}
+.pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--g2),var(--gold));border-radius:4px}
+.checks{max-height:170px;overflow:auto;border:1.5px solid var(--line);border-radius:13px;padding:6px 10px;background:#fff}
+.checks label{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:15px;border-bottom:1px solid var(--line)}
+.checks label:last-child{border:0}.checks input{width:auto;flex:none}
+.creds{background:#fff;border:1.5px dashed var(--g2);border-radius:14px;padding:6px 14px;margin-bottom:12px}
+.creds div{padding:8px 0;border-bottom:1px solid var(--line)}.creds div:last-child{border:0}
+.creds small{display:block;color:var(--mut);font-size:12px}.creds b{font-size:17px;word-break:break-all}
+.bub{max-height:52vh;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px}
+.bub .m{max-width:84%;background:#fff;border:1px solid var(--line);border-radius:16px 16px 16px 4px;padding:8px 12px;align-self:flex-end}
+.bub .m.mine{background:var(--g3);border-color:#cfe9dc;border-radius:16px 16px 4px 16px;align-self:flex-start}
+.bub .m p{margin:2px 0;white-space:pre-wrap;word-break:break-word}
+.bub .m small{display:block;font-size:11px;color:var(--mut)}
+#msgin{min-height:48px}

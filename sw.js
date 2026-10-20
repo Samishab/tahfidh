@@ -1,4 +1,4 @@
-const CACHE = 'tahfidh-v1';
+const CACHE = 'tahfidh-v2';
 const ASSETS = ['./', 'index.html', 'style.css', 'quran.js', 'app.js', 'icon.svg', 'manifest.json'];
 
 self.addEventListener('install', e => {
@@ -9,7 +9,7 @@ self.addEventListener('activate', e => {
 });
 // الشبكة أولاً ثم الكاش (لتصل التحديثات فور رفعها)
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) return;
+  if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin) || e.request.url.includes('/api/')) return;
   e.respondWith(
     fetch(e.request).then(r => {
       const copy = r.clone();

@@ -1,5 +1,5 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/USERNAME/tahfidh.ipickhost.com/
-    - /bin/cp -R index.html style.css app.js quran.js sw.js manifest.json icon.svg $DEPLOYPATH
+    - export DEPLOYPATH=/home/ipickhos/tahfidh.ipickhost.com/
+    - /bin/cp -R index.html style.css app.js quran.js sw.js manifest.json icon.svg api $DEPLOYPATH
