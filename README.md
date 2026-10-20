@@ -14,10 +14,19 @@
 ## التشغيل محلياً
 أي خادم ثابت، مثلاً: `python -m http.server 8765` ثم افتح http://localhost:8765
 
-## النشر على cPanel (دومين فرعي)
-الموقع ملفات ثابتة فقط (لا يحتاج PHP ولا قاعدة بيانات):
-ارفع كل الملفات إلى مجلد الدومين الفرعي (document root) عبر Git Version Control أو File Manager.
-يُفضّل تفعيل HTTPS (AutoSSL) لأن تشفير كلمة المرور وعمل التطبيق offline يحتاجانه.
+## النشر على cPanel (tahfidh.ipickhost.com)
+الموقع ملفات ثابتة فقط (لا يحتاج PHP ولا قاعدة بيانات).
+
+**الطريقة الأسهل — Git Version Control:**
+1. cPanel ← Domains: تأكد أن document root للدومين الفرعي مثلاً `/home/USERNAME/tahfidh.ipickhost.com`.
+2. cPanel ← Git™ Version Control ← Create: Clone URL = `https://github.com/Samishab/tahfidh.git`، ومسار المستودع مثلاً `/home/USERNAME/repos/tahfidh`.
+3. عدّل `USERNAME` في ملف `.cpanel.yml` ليطابق حسابك، ثم Push إلى GitHub.
+4. في صفحة المستودع بـ cPanel اضغط Update from Remote ثم Deploy HEAD Commit — تُنسخ الملفات للدومين تلقائياً.
+5. فعّل SSL (SSL/TLS Status ← Run AutoSSL) ليعمل HTTPS.
+
+**بديل:** رفع الملفات يدوياً عبر File Manager إلى مجلد الدومين.
+
+لتحديث الموقع لاحقاً: Push للتغييرات ← Update from Remote ← Deploy HEAD Commit.
 
 ## ملاحظة مهمة عن البيانات
 البيانات تُحفظ في متصفح المدرس (localStorage) ولا تُرفع للسيرفر. خذ نسخة احتياطية من الإعدادات دورياً.
