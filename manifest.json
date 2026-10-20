@@ -1,0 +1,16 @@
+{
+  "name": "متابعة التحفيظ",
+  "short_name": "التحفيظ",
+  "description": "متابعة حفظ ومراجعة القرآن الكريم للمدرس",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "ar",
+  "background_color": "#fbf7ee",
+  "theme_color": "#0b5d45",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
