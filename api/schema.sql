@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(60) NOT NULL,
   name VARCHAR(120) NOT NULL,
-  role ENUM('admin','teacher','parent','student') NOT NULL,
+  role ENUM('admin','school_admin','teacher','parent','student') NOT NULL,
   school_id INT UNSIGNED NULL,
   phone VARCHAR(30) NULL,
   pass_hash VARCHAR(255) NOT NULL,
@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 
 CREATE TABLE IF NOT EXISTS signup_requests (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  role ENUM('parent','teacher') NOT NULL,
+  role ENUM('parent','teacher','school') NOT NULL,
+  school_name VARCHAR(120) NULL,
   name VARCHAR(120) NOT NULL,
   username VARCHAR(60) NOT NULL,
   pass_hash VARCHAR(255) NOT NULL,

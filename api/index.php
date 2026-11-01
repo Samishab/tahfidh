@@ -64,6 +64,7 @@ function need(string ...$roles): array {
 function scope(array $u, string $col = 'id'): array {
     return match ($u['role']) {
         'admin' => ['1=1', []],
+        'school_admin' => ["$col IN (SELECT id FROM students WHERE school_id=?)", [$u['school_id']]],
         'teacher' => ["$col IN (SELECT id FROM students WHERE teacher_id=?)", [$u['id']]],
         'parent' => ["$col IN (SELECT student_id FROM parent_student WHERE parent_id=?)", [$u['id']]],
         default => ["$col IN (SELECT id FROM students WHERE user_id=?)", [$u['id']]],
@@ -76,9 +77,11 @@ function canSee(array $u, int $sid): bool {
 /** هل يحق لهذا المستخدم استعمال رواية غير حفص؟ (المعلم يفعّلها بنفسه من حسابه) */
 function qiraatAllowed(array $u, ?int $teacherId): bool {
     if (!empty($u['qiraat'])) return true;
-    if ($u['role'] === 'admin' && $teacherId) return (bool)q('SELECT qiraat FROM users WHERE id=?', [$teacherId])->fetchColumn();
+    if (in_array($u['role'], ['admin', 'school_admin'], true) && $teacherId) return (bool)q('SELECT qiraat FROM users WHERE id=?', [$teacherId])->fetchColumn();
     return false;
 }
+/** مدير النظام يملك كل شيء، ومدير المدرسة يملك مدرسته فقط */
+function mgrOwns(array $me, $schoolId): bool { return $me['role'] === 'admin' || (int)$schoolId === (int)$me['school_id']; }
 function certOut(array $c): array {
     return ['id' => (int)$c['id'], 'serial' => $c['serial'], 'studentId' => (int)$c['student_id'], 'student' => $c['student_name'], 'school' => $c['school_name'],
         'kind' => $c['kind'], 'title' => $c['title'], 'riwaya' => $c['riwaya'], 'from' => $c['period_from'], 'to' => $c['period_to'],
@@ -141,11 +144,14 @@ function bootstrap(array $u): array {
     $res = ['me' => userOut($u) + ['must_change' => (bool)$u['must_change']], 'school' => $school, 'schools' => $schools,
         'students' => $stOut, 'records' => $recs, 'messages' => $msgs, 'reads' => (object)$reads, 'users' => [],
         'certs' => array_map('certOut', q("SELECT * FROM certificates WHERE student_id IN ($in) ORDER BY id DESC")->fetchAll())];
+    $reqOut = fn($r) => ['id' => (int)$r['id'], 'role' => $r['role'], 'name' => $r['name'], 'username' => $r['username'],
+        'school_id' => $r['school_id'] ? (int)$r['school_id'] : null, 'school_name' => $r['school_name'] ?? '', 'children' => $r['children'] ?? '', 'at' => iso($r['created_at'])];
     if ($u['role'] === 'admin') {
         $res['users'] = array_map('userOut', q('SELECT * FROM users ORDER BY role, name')->fetchAll());
-        $res['requests'] = array_map(fn($r) => ['id' => (int)$r['id'], 'role' => $r['role'], 'name' => $r['name'], 'username' => $r['username'],
-            'school_id' => $r['school_id'] ? (int)$r['school_id'] : null, 'children' => $r['children'] ?? '', 'at' => iso($r['created_at'])],
-            q('SELECT * FROM signup_requests ORDER BY id')->fetchAll());
+        $res['requests'] = array_map($reqOut, q('SELECT * FROM signup_requests ORDER BY id')->fetchAll());
+    } elseif ($u['role'] === 'school_admin') {
+        $res['users'] = array_map('userOut', q("SELECT * FROM users WHERE school_id=? AND role IN ('teacher','parent','student') ORDER BY role, name", [$u['school_id']])->fetchAll());
+        $res['requests'] = array_map($reqOut, q("SELECT * FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher') ORDER BY id", [$u['school_id']])->fetchAll());
     } elseif ($u['role'] === 'parent' || $u['role'] === 'student') {
         // أسماء المعلمين لعرضها فقط
         $res['users'] = array_map(fn($t) => ['id' => (int)$t['id'], 'name' => $t['name'], 'role' => 'teacher'],
@@ -222,7 +228,7 @@ try {
 
     /* ----- التسميع ----- */
     case 'record_save': {
-        $u = need('admin', 'teacher');
+        $u = need('admin', 'school_admin', 'teacher');
         [$d, $type, $s, $f, $t, $g, $note, $rw] = validRecord();
         $sid = (int)(body()['studentId'] ?? 0); $id = (int)(body()['id'] ?? 0);
         if (!canSee($u, $sid)) fail('الطالب غير موجود', 404);
@@ -238,7 +244,7 @@ try {
         out(['record' => recOut(q('SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.id=?', [$id])->fetch())]);
     }
     case 'record_delete': {
-        $u = need('admin', 'teacher'); $id = (int)(body()['id'] ?? 0);
+        $u = need('admin', 'school_admin', 'teacher'); $id = (int)(body()['id'] ?? 0);
         $old = q('SELECT student_id FROM records WHERE id=?', [$id])->fetch();
         if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
         q('DELETE FROM records WHERE id=?', [$id]);
@@ -263,12 +269,14 @@ try {
     case 'poll': {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
         out(['messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
-            'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn() : 0]);
+            'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn()
+                : ($u['role'] === 'school_admin' ? (int)q("SELECT COUNT(*) FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher')", [$u['school_id']])->fetchColumn() : 0)]);
     }
 
-    /* ----- الإدارة (للمدير فقط) ----- */
+    /* ----- الإدارة: مدير النظام ومدير المدرسة ----- */
     case 'school_save': {
-        need('admin'); $id = (int)(body()['id'] ?? 0); $name = str('name', 120); $logo = (string)(body()['logo'] ?? '');
+        $me = need('admin', 'school_admin'); $b = body(); $id = (int)($b['id'] ?? 0); $name = str('name', 120); $logo = (string)($b['logo'] ?? '');
+        if ($me['role'] === 'school_admin') $id = (int)$me['school_id'];      // مدير المدرسة يعدّل مدرسته فقط
         if ($name === '') fail('اسم المدرسة مطلوب');
         if ($logo !== '' && (!str_starts_with($logo, 'data:image/') || strlen($logo) > 400000)) fail('الشعار غير صالح');
         if ($id) q('UPDATE schools SET name=?, logo=? WHERE id=?', [$name, $logo, $id]);
@@ -283,41 +291,50 @@ try {
     }
 
     case 'user_save': {
-        $me = need('admin'); $b = body(); $id = (int)($b['id'] ?? 0);
+        $me = need('admin', 'school_admin'); $b = body(); $id = (int)($b['id'] ?? 0); $sa = $me['role'] === 'school_admin';
         $name = str('name', 120); $un = normUser(str('username', 60)); $phone = preg_replace('/[^\d+]/', '', str('phone', 30));
         $role = $b['role'] ?? ''; $school = (int)($b['school_id'] ?? 0) ?: null; $active = !isset($b['active']) || $b['active'] ? 1 : 0;
+        $qi = !empty($b['qiraat']) ? 1 : 0; $keepQ = 0;
         if ($name === '') fail('الاسم مطلوب');
         uniqueUsername($un, $id);
+        $allowed = $sa ? ['teacher', 'parent'] : ['admin', 'school_admin', 'teacher', 'parent'];
         if ($id) {
             $old = q('SELECT * FROM users WHERE id=?', [$id])->fetch();
             if (!$old || $old['role'] === 'student') fail('مستخدم غير موجود', 404);
+            if ($sa && (!in_array($old['role'], $allowed, true) || !mgrOwns($me, $old['school_id']))) fail('غير مصرح', 403);
             if ($id === (int)$me['id'] && !$active) fail('لا يمكنك تعطيل حسابك');
-            $role = $old['role'];
-        } elseif (!in_array($role, ['admin', 'teacher', 'parent'], true)) fail('نوع الحساب غير صحيح');
-        if ($role === 'teacher' && !$school) fail('اختر مدرسة المعلم');
-        if ($role !== 'teacher') $school = null;
+            $role = $old['role']; $keepQ = (int)$old['qiraat'];
+        } elseif (!in_array($role, $allowed, true)) fail('نوع الحساب غير صحيح');
+        if ($sa) $school = (int)$me['school_id'];
+        if ($role === 'admin') $school = null; elseif (!$school) fail('اختر المدرسة');
+        if ($school && !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('مدرسة غير صحيحة');
+        if ($role === 'school_admin' && q("SELECT 1 FROM users WHERE role='school_admin' AND school_id=? AND id<>?", [$school, $id])->fetchColumn())
+            fail('لهذه المدرسة مدير بالفعل (مدير واحد لكل مدرسة)');
+        $qv = $role === 'teacher' ? $qi : $keepQ;
         $pw = null;
         if ($id) {
-            q('UPDATE users SET name=?, username=?, phone=?, school_id=?, active=? WHERE id=?', [$name, $un, $phone, $school, $active, $id]);
+            q('UPDATE users SET name=?, username=?, phone=?, school_id=?, active=?, qiraat=? WHERE id=?', [$name, $un, $phone, $school, $active, $qv, $id]);
         } else {
             $pw = genPass();
-            q('INSERT INTO users (username,name,role,school_id,phone,pass_hash,must_change) VALUES (?,?,?,?,?,?,1)', [$un, $name, $role, $school, $phone, password_hash($pw, PASSWORD_DEFAULT)]);
+            q('INSERT INTO users (username,name,role,school_id,phone,pass_hash,qiraat,must_change) VALUES (?,?,?,?,?,?,?,1)', [$un, $name, $role, $school, $phone, password_hash($pw, PASSWORD_DEFAULT), $qv]);
             $id = (int)db()->lastInsertId();
         }
         out(['id' => $id, 'username' => $un, 'password' => $pw]);
     }
     case 'reset_password': {
-        $me = need('admin'); $id = (int)(body()['id'] ?? 0);
-        $u = q('SELECT username FROM users WHERE id=?', [$id])->fetch();
+        $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
+        $u = q('SELECT username,role,school_id FROM users WHERE id=?', [$id])->fetch();
         if (!$u) fail('مستخدم غير موجود', 404);
+        if ($me['role'] === 'school_admin' && (!in_array($u['role'], ['teacher', 'parent', 'student'], true) || !mgrOwns($me, $u['school_id']))) fail('غير مصرح', 403);
         $pw = genPass();
         q('UPDATE users SET pass_hash=?, must_change=1 WHERE id=?', [password_hash($pw, PASSWORD_DEFAULT), $id]);
         out(['username' => $u['username'], 'password' => $pw]);
     }
     case 'user_delete': {
-        $me = need('admin'); $id = (int)(body()['id'] ?? 0);
-        $u = q('SELECT role FROM users WHERE id=?', [$id])->fetch();
+        $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
+        $u = q('SELECT role,school_id FROM users WHERE id=?', [$id])->fetch();
         if (!$u || $u['role'] === 'student') fail('مستخدم غير موجود', 404);
+        if ($me['role'] === 'school_admin' && (!in_array($u['role'], ['teacher', 'parent'], true) || !mgrOwns($me, $u['school_id']))) fail('غير مصرح', 403);
         if ($id === (int)$me['id']) fail('لا يمكنك حذف حسابك');
         q('UPDATE students SET teacher_id=NULL WHERE teacher_id=?', [$id]);
         q('DELETE FROM parent_student WHERE parent_id=?', [$id]);
@@ -327,18 +344,28 @@ try {
     }
 
     case 'student_save': {
-        $me = need('admin'); $b = body(); $id = (int)($b['id'] ?? 0);
+        $me = need('admin', 'school_admin'); $sa = $me['role'] === 'school_admin'; $b = body(); $id = (int)($b['id'] ?? 0);
         $name = str('name', 120); $grp = str('group', 80); $school = (int)($b['school_id'] ?? 0) ?: null; $teacher = (int)($b['teacher_id'] ?? 0) ?: null;
+        if ($sa) $school = (int)$me['school_id'];
         $parents = array_values(array_unique(array_map('intval', is_array($b['parent_ids'] ?? null) ? $b['parent_ids'] : [])));
         $login = normUser(str('login_username', 60));
-        $rw = in_array($b['riwaya'] ?? 'hafs', RIWAYAT, true) ? $b['riwaya'] : 'hafs';
+        $rw = (string)($b['riwaya'] ?? 'hafs'); if (!in_array($rw, RIWAYAT, true)) $rw = 'hafs';
         if ($rw !== 'hafs' && !qiraatAllowed($me, $teacher)) fail('فعّل القراءات في حساب المعلم أو حسابك أولاً');
         if ($name === '') fail('اسم الطالب مطلوب');
-        if (!$school) fail('اختر المدرسة');
-        if ($teacher && !q("SELECT 1 FROM users WHERE id=? AND role='teacher'", [$teacher])->fetchColumn()) fail('المعلم غير صحيح');
-        foreach ($parents as $pid) if (!q("SELECT 1 FROM users WHERE id=? AND role='parent'", [$pid])->fetchColumn()) fail('ولي أمر غير صحيح');
+        if (!$school || !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('اختر المدرسة');
+        if ($teacher) {
+            $t = q("SELECT school_id FROM users WHERE id=? AND role='teacher'", [$teacher])->fetch();
+            if (!$t) fail('المعلم غير صحيح');
+            if ((int)$t['school_id'] !== (int)$school) fail('المعلم من مدرسة أخرى');
+        }
+        foreach ($parents as $pid) {
+            $pr = q("SELECT school_id FROM users WHERE id=? AND role='parent'", [$pid])->fetch();
+            if (!$pr) fail('ولي أمر غير صحيح');
+            if ($sa && (int)$pr['school_id'] !== (int)$school) fail('ولي أمر من مدرسة أخرى');
+        }
         $old = $id ? q('SELECT * FROM students WHERE id=?', [$id])->fetch() : null;
         if ($id && !$old) fail('الطالب غير موجود', 404);
+        if ($old && !mgrOwns($me, $old['school_id'])) fail('غير مصرح', 403);
         if ($id) q('UPDATE students SET name=?, school_id=?, teacher_id=?, grp=?, riwaya=? WHERE id=?', [$name, $school, $teacher, $grp, $rw, $id]);
         else { q('INSERT INTO students (name,school_id,teacher_id,grp,riwaya) VALUES (?,?,?,?,?)', [$name, $school, $teacher, $grp, $rw]); $id = (int)db()->lastInsertId(); }
         q('DELETE FROM parent_student WHERE student_id=?', [$id]);
@@ -361,9 +388,10 @@ try {
         out(['id' => $id, 'login' => $cred]);
     }
     case 'student_delete': {
-        need('admin'); $id = (int)(body()['id'] ?? 0);
-        $s = q('SELECT user_id FROM students WHERE id=?', [$id])->fetch();
+        $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
+        $s = q('SELECT user_id,school_id FROM students WHERE id=?', [$id])->fetch();
         if (!$s) fail('الطالب غير موجود', 404);
+        if (!mgrOwns($me, $s['school_id'])) fail('غير مصرح', 403);
         foreach (['records', 'messages', 'message_reads', 'parent_student', 'certificates'] as $t) q("DELETE FROM $t WHERE student_id=?", [$id]);
         if ($s['user_id']) q('DELETE FROM users WHERE id=?', [$s['user_id']]);
         q('DELETE FROM students WHERE id=?', [$id]);
@@ -372,7 +400,7 @@ try {
 
     /* ----- الشهادات ----- */
     case 'cert_issue': {
-        $u = need('admin', 'teacher'); $b = body(); $sid = (int)($b['studentId'] ?? 0);
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $sid = (int)($b['studentId'] ?? 0);
         $s = q('SELECT s.*, sc.name AS school FROM students s LEFT JOIN schools sc ON sc.id=s.school_id WHERE s.id=?', [$sid])->fetch();
         if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
         $kind = $b['kind'] ?? ''; if (!in_array($kind, ['khatm', 'period', 'custom'], true)) fail('نوع الشهادة غير صحيح');
@@ -394,9 +422,13 @@ try {
             [$serial, $sid, $s['name'], $s['school'] ?? '', $kind, $title, $rw, $kind === 'period' ? $pf : null, $kind === 'period' ? $pt : null, $grade, str('note', 300), $u['id'], $u['name'], $date]);
         out(['cert' => certOut(q('SELECT * FROM certificates WHERE id=?', [(int)db()->lastInsertId()])->fetch())]);
     }
-    case 'cert_delete':
-        need('admin'); q('DELETE FROM certificates WHERE id=?', [(int)(body()['id'] ?? 0)]);
+    case 'cert_delete': {
+        $u = need('admin', 'school_admin'); $cid = (int)(body()['id'] ?? 0);
+        $sid = (int)q('SELECT student_id FROM certificates WHERE id=?', [$cid])->fetchColumn();
+        if (!$sid || !canSee($u, $sid)) fail('غير مصرح', 403);
+        q('DELETE FROM certificates WHERE id=?', [$cid]);
         out(['ok' => true]);
+    }
     case 'cert_verify': {   // عام: يتطلب رقم الشهادة فقط
         if ((int)q("SELECT COUNT(*) FROM login_attempts WHERE ip=? AND username='verify' AND at > NOW() - INTERVAL 15 MINUTE", [ip()])->fetchColumn() >= 40) fail('محاولات كثيرة، حاول لاحقاً', 429);
         q("INSERT INTO login_attempts (ip,username) VALUES (?, 'verify')", [ip()]);
@@ -405,12 +437,12 @@ try {
     }
 
     case 'set_qiraat': {
-        $u = need('admin', 'teacher');
+        $u = need('admin', 'school_admin', 'teacher');
         q('UPDATE users SET qiraat=? WHERE id=?', [!empty(body()['on']) ? 1 : 0, $u['id']]);
         out(['ok' => true]);
     }
     case 'student_riwaya': {
-        $u = need('admin', 'teacher'); $sid = (int)(body()['id'] ?? 0); $rw = (string)(body()['riwaya'] ?? 'hafs');
+        $u = need('admin', 'school_admin', 'teacher'); $sid = (int)(body()['id'] ?? 0); $rw = (string)(body()['riwaya'] ?? 'hafs');
         if (!in_array($rw, RIWAYAT, true)) fail('رواية غير صحيحة');
         if (!canSee($u, $sid)) fail('غير مصرح', 403);
         $tid = (int)q('SELECT teacher_id FROM students WHERE id=?', [$sid])->fetchColumn();
@@ -429,39 +461,54 @@ try {
         $tk = (int)($b['tk'] ?? 0);
         if ($tk <= 0 || time() - $tk < 3 || time() - $tk > 172800) fail('أعد المحاولة');
         if ((int)q('SELECT COUNT(*) FROM signup_requests WHERE ip=? AND created_at > NOW() - INTERVAL 1 HOUR', [ip()])->fetchColumn() >= 3)
-            fail('وصلتنا طلباتك، انتظر موافقة الإدارة', 429);
+            fail('وصلتنا طلباتك، انتظر الموافقة', 429);
         if ((int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn() >= 300) fail('الطلبات ممتلئة حالياً، تواصل مع الإدارة', 429);
-        $role = $b['role'] ?? ''; if (!in_array($role, ['parent', 'teacher'], true)) fail('نوع الحساب غير صحيح');
+        $role = $b['role'] ?? ''; if (!in_array($role, ['parent', 'teacher', 'school'], true)) fail('نوع الحساب غير صحيح');
         $name = str('name', 120); $un = normUser(str('username', 60)); $pw = (string)($b['password'] ?? '');
-        $school = (int)($b['school_id'] ?? 0) ?: null; $children = str('children', 300);
+        $school = (int)($b['school_id'] ?? 0) ?: null; $children = str('children', 300); $sname = str('school_name', 120);
         if ($name === '') fail('الاسم مطلوب');
         if (mb_strlen($pw) < 6) fail('كلمة المرور 6 أحرف على الأقل');
         uniqueUsername($un);
         if (q('SELECT 1 FROM signup_requests WHERE username=?', [$un])->fetchColumn()) fail('يوجد طلب بهذا الرقم قيد المراجعة');
-        if ($school && !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('مدرسة غير صحيحة');
-        if ($role === 'teacher' && !$school) fail('اختر المدرسة');
-        if ($role === 'parent' && $children === '') fail('اكتب اسم ابنك أو أبنائك');
-        q('INSERT INTO signup_requests (role,name,username,pass_hash,school_id,children,ip) VALUES (?,?,?,?,?,?,?)',
-            [$role, $name, $un, password_hash($pw, PASSWORD_DEFAULT), $school, $children, ip()]);
+        if ($role === 'school') {
+            if ($sname === '') fail('اكتب اسم المدرسة');
+            $school = null; $children = '';
+        } else {
+            $sname = '';
+            if (!$school || !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('اختر المدرسة');
+            if ($role === 'parent' && $children === '') fail('اكتب اسم ابنك أو أبنائك');
+        }
+        q('INSERT INTO signup_requests (role,name,username,pass_hash,school_id,school_name,children,ip) VALUES (?,?,?,?,?,?,?,?)',
+            [$role, $name, $un, password_hash($pw, PASSWORD_DEFAULT), $school, $sname, $children, ip()]);
         out(['ok' => true]);
     }
     case 'request_approve': {
-        need('admin'); $id = (int)(body()['id'] ?? 0);
+        $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
         $rq = q('SELECT * FROM signup_requests WHERE id=?', [$id])->fetch();
         if (!$rq) fail('الطلب غير موجود', 404);
+        if ($me['role'] === 'school_admin' && ($rq['role'] === 'school' || !mgrOwns($me, $rq['school_id']))) fail('غير مصرح', 403);
         uniqueUsername($rq['username']);
-        $sids = array_map('intval', is_array(body()['student_ids'] ?? null) ? body()['student_ids'] : []);
-        q('INSERT INTO users (username,name,role,school_id,pass_hash,must_change) VALUES (?,?,?,?,?,0)',
-            [$rq['username'], $rq['name'], $rq['role'], $rq['role'] === 'teacher' ? $rq['school_id'] : null, $rq['pass_hash']]);
+        $role = $rq['role']; $school = $rq['school_id'];
+        if ($role === 'school') {                    // مدرسة جديدة + مديرها (يوافق عليها مدير النظام فقط)
+            q('INSERT INTO schools (name) VALUES (?)', [$rq['school_name']]);
+            $school = (int)db()->lastInsertId(); $role = 'school_admin';
+        }
+        q('INSERT INTO users (username,name,role,school_id,pass_hash,must_change) VALUES (?,?,?,?,?,0)', [$rq['username'], $rq['name'], $role, $school, $rq['pass_hash']]);
         $uid = (int)db()->lastInsertId();
-        if ($rq['role'] === 'parent')
-            foreach ($sids as $sid) if (q('SELECT 1 FROM students WHERE id=?', [$sid])->fetchColumn()) q('INSERT IGNORE INTO parent_student (parent_id,student_id) VALUES (?,?)', [$uid, $sid]);
+        if ($role === 'parent') {
+            $sids = array_map('intval', is_array(body()['student_ids'] ?? null) ? body()['student_ids'] : []);
+            foreach ($sids as $sid) if (q('SELECT 1 FROM students WHERE id=? AND school_id=?', [$sid, $school])->fetchColumn()) q('INSERT IGNORE INTO parent_student (parent_id,student_id) VALUES (?,?)', [$uid, $sid]);
+        }
         q('DELETE FROM signup_requests WHERE id=?', [$id]);
         out(['id' => $uid]);
     }
-    case 'request_reject':
-        need('admin'); q('DELETE FROM signup_requests WHERE id=?', [(int)(body()['id'] ?? 0)]);
+    case 'request_reject': {
+        $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
+        $rq = q('SELECT role,school_id FROM signup_requests WHERE id=?', [$id])->fetch();
+        if ($rq && $me['role'] === 'school_admin' && ($rq['role'] === 'school' || !mgrOwns($me, $rq['school_id']))) fail('غير مصرح', 403);
+        q('DELETE FROM signup_requests WHERE id=?', [$id]);
         out(['ok' => true]);
+    }
 
     default: fail('مسار غير معروف', 404);
     }

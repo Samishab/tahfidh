@@ -30,7 +30,7 @@ function viewCert() {
   if (!c) return staff() ? viewStudents() : viewKids();
   return `
   <div class="card noprint"><div class="row"><button class="btn gold" data-act="print">🖨 طباعة / حفظ PDF</button><button class="btn light auto" data-act="rback">رجوع</button>
-    ${isAdmin() ? `<button class="btn red auto" data-act="del-cert" data-id="${c.id}">🗑</button>` : ''}</div>
+    ${isMgr() ? `<button class="btn red auto" data-act="del-cert" data-id="${c.id}">🗑</button>` : ''}</div>
     <p class="hint" style="margin:8px 0 0">الشهادة بحجم A4 أفقي. اختر «حفظ بتنسيق PDF» من نافذة الطباعة.</p></div>
   <div class="rptwrap" id="rptwrap"><div class="rpt cert" id="rpt" data-w="1123" data-h="794">${certSheet(c)}</div></div>`;
 }
@@ -51,17 +51,25 @@ function certForm(sid) {
 const certDefaultTitle = k => k === 'khatm' ? 'شهادة ختم حفظ القرآن الكريم' : k === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
 
 /* ---------- الكشف الشهري للحلقة ---------- */
-function monthlySheet(off, school) {
+function monthlyData(off, school) {
   const m = monthRange(off), a = ymd(m.s), b = ymd(m.e);
   const studs = db.students.filter(s => !school || s.school_id === +school), ids = new Set(studs.map(s => s.id));
   const recs = db.records.filter(r => ids.has(r.studentId) && r.date >= a && r.date <= b), g = agg(recs);
-  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), x = agg(recs.filter(r => r.date === dt)); return { h: x.h, r: x.r }; });
+  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), y = agg(recs.filter(r => r.date === dt)); return { h: y.h, r: y.r }; });
   const rows = studs.map(s => {
-    const rs = recs.filter(r => r.studentId === s.id), x = agg(rs), gs = rs.filter(r => r.grade);
+    const rs = recs.filter(r => r.studentId === s.id), y = agg(rs), gs = rs.filter(r => r.grade);
     const avg = gs.length ? gs.reduce((t, r) => t + GP[r.grade], 0) / gs.length : 0;
-    return { s, x, avg: gs.length ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—', last: lastOf(s.id, 'hifz', s.riwaya || 'hafs') };
+    return { s, x: y, avg: gs.length ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—', last: lastOf(s.id, 'hifz', s.riwaya || 'hafs') };
   }).sort((p, q) => (q.x.h + q.x.r) - (p.x.h + p.x.r));
-  const inactive = rows.filter(r => !r.x.n).length, top = rows.filter(r => r.x.n).slice(0, 3);
+  return { m, studs, g, per, rows, inactive: rows.filter(r => !r.x.n).length, top: rows.filter(r => r.x.n).slice(0, 3) };
+}
+function monthlyCsv() {
+  const { m, rows } = monthlyData(st.mo, st.mschool);
+  downloadCsv(`كشف-${m.label}`, [['الطالب', 'آيات الحفظ', 'آيات المراجعة', 'عدد التسميعات', 'أيام التسميع', 'متوسط التقدير', 'آخر موضع حفظ']]
+    .concat(rows.map(r => [r.s.name, r.x.h, r.x.r, r.x.n, r.x.days.size, r.avg, r.last ? `${Q.name(r.last.surah)} ${r.last.to}` : ''])));
+}
+function monthlySheet(off, school) {
+  const { m, studs, g, per, rows, inactive, top } = monthlyData(off, school);
   const grp = (db.schools.find(x => x.id === +school) || brand()).name;
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
   return `
@@ -89,7 +97,7 @@ function viewMonthly() {
   <div class="card noprint">
     <div class="nav-period"><button data-act="mprev">›</button><div>${m.label}<small>${st.mo === -1 ? 'الشهر الماضي' : st.mo === 0 ? 'الشهر الحالي' : 'كشف سابق'}</small></div><button data-act="mnext" ${st.mo >= 0 ? 'disabled' : ''}>‹</button></div>
     ${isAdmin() && db.schools.length > 1 ? `<div style="margin-bottom:10px"><select id="mschool"><option value="">كل المدارس</option>${db.schools.map(x => `<option value="${x.id}" ${+st.mschool === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
-    <div class="row"><button class="btn gold" data-act="print">🖨 طباعة / حفظ PDF</button><button class="btn light auto" data-act="nav" data-id="home">رجوع</button></div>
+    <div class="row"><button class="btn gold" data-act="print">🖨 طباعة / PDF</button><button class="btn ghost" data-act="csv-monthly">⬇ Excel</button><button class="btn light auto" data-act="nav" data-id="home">رجوع</button></div>
     <p class="hint" style="margin:8px 0 0">يُعرض افتراضياً كشف الشهر الماضي (يظهر تنبيهه في الرئيسية أول الشهر).</p>
   </div>
   <div class="rptwrap" id="rptwrap"><div class="rpt flow" id="rpt">${monthlySheet(st.mo, st.mschool)}</div></div>`;
@@ -107,4 +115,64 @@ function renderVerify() {
         <div><small>تاريخ الإصدار</small><b>${fmtG(parse(c.date))}</b></div><div><small>المصدر</small><b>${esc(c.issuer)}</b></div></div>`
       : '<div class="info err">❌ لا توجد شهادة بهذا الرقم، تأكد من الرقم وحاول مجدداً.</div>'}
       <button class="btn block ghost" style="margin-top:12px" data-act="to-login">دخول النظام</button></div></div>`;
+}
+
+/* ---------- تنزيل ملف Excel (CSV بترميز عربي صحيح) ---------- */
+function downloadCsv(name, rows) {
+  const csv = '\ufeff' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = name + '.csv'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+/* ---------- كشف تسميع الطالب لفترة مختارة (لكل الأدوار) ---------- */
+function stmtRange() {
+  const n = new Date(), p = st.sp || 'month', Y = n.getFullYear(), M = n.getMonth();
+  if (p === 'custom') { const a = st.sfrom || ymd(new Date(Y, M, 1)), b = st.sto || today(); return { a, b, label: `${fmtG(parse(a))} – ${fmtG(parse(b))}` }; }
+  if (p === 'last') { const s = new Date(Y, M - 1, 1), e = new Date(Y, M, 0); return { a: ymd(s), b: ymd(e), label: s.toLocaleDateString(L, { month: 'long', year: 'numeric' }) }; }
+  if (p === '3m') { const s = new Date(Y, M - 2, 1); return { a: ymd(s), b: today(), label: `آخر 3 أشهر (من ${fmtG(s)})` }; }
+  if (p === 'all') return { a: '0000-01-01', b: '9999-12-31', label: 'كل الفترات' };
+  const s = new Date(Y, M, 1); return { a: ymd(s), b: today(), label: `${s.toLocaleDateString(L, { month: 'long', year: 'numeric' })} (حتى اليوم)` };
+}
+function stmtData(s) {
+  const r = stmtRange();
+  return { r, recs: db.records.filter(x => x.studentId === s.id && x.date >= r.a && x.date <= r.b).sort((p, q) => p.date.localeCompare(q.date) || p.id - q.id) };
+}
+function stmtCsv() {
+  const s = student(st.sid), { r, recs } = stmtData(s);
+  downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'السورة', 'من آية', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'الرواية', 'ملاحظة']]
+    .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), x.type === 'hifz' ? 'حفظ' : 'مراجعة', Q.name(x.surah), x.from, x.to, ayahs(x), Q.juz(x.surah, x.from, x.to).join('-'), x.grade || '', (RW[x.riwaya] || RW.hafs).label, x.note || ''])));
+}
+function statementSheet(s) {
+  const { r, recs } = stmtData(s), g = agg(recs), t = userById(s.teacher_id);
+  const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
+  return `
+  <div class="rp-hd"><div class="rp-pat"></div><img src="${esc(brand().logo) || 'icon.svg'}" class="rp-logo" alt="">
+    <div class="rp-hd-t"><small>كشف التسميع</small><h1>${esc(brand().name)}</h1></div>
+    <div class="rp-month"><b style="font-size:15px">${esc(r.label)}</b></div></div>
+  <div class="rp-st"><div class="rp-av">${initial(s.name)}</div>
+    <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</p></div></div>
+  <div class="rp-kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🗓', g.days.size, 'أيام التسميع', '#3b7ddd')}</div>
+  <div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>${recs.length} تسميع</span></h3>
+    ${recs.length ? `<table><tr><th>#</th><th>التاريخ</th><th>النوع</th><th style="text-align:start">السورة والآيات</th><th>الجزء</th><th>التقدير</th><th style="text-align:start">ملاحظة</th></tr>
+      ${recs.map((x, i) => { const d = parse(x.date); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td>
+        <td><em class="${x.type === 'hifz' ? 'h' : 'r'}">${x.type === 'hifz' ? 'حفظ' : 'مراجعة'}</em></td>
+        <td style="text-align:start"><b>${Q.name(x.surah)}</b> ${x.from}–${x.to} <small>(${ayahs(x)})${x.riwaya && x.riwaya !== 'hafs' ? ' • ' + RW[x.riwaya].short : ''}</small></td>
+        <td>${Q.juz(x.surah, x.from, x.to).join('–')}</td><td>${x.grade || '—'}</td><td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table>`
+      : '<p class="rp-cap" style="padding:16px 0">لا يوجد تسميع في هذه الفترة</p>'}</div>
+  <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>ولي الأمر</div></div>
+  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
+}
+function viewStatement() {
+  const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
+  const p = st.sp || 'month', r = stmtRange();
+  const chip = (k, l) => `<button class="chip ${p === k ? 'on' : ''}" data-act="sp" data-id="${k}">${l}</button>`;
+  return `
+  <div class="card noprint">
+    <h3>📑 ${esc(s.name)}</h3>
+    <div class="chips" style="margin-bottom:10px">${chip('month', 'هذا الشهر')}${chip('last', 'الشهر الماضي')}${chip('3m', 'آخر 3 أشهر')}${chip('all', 'الكل')}${chip('custom', 'فترة محددة')}</div>
+    ${p === 'custom' ? `<div class="row" style="margin-bottom:10px"><div><label class="f">من</label><input type="date" id="sfrom" value="${r.a}" max="${today()}"></div><div><label class="f">إلى</label><input type="date" id="sto" value="${r.b}" max="${today()}"></div></div>` : ''}
+    <div class="row"><button class="btn gold" data-act="print">🖨 طباعة / PDF</button><button class="btn ghost" data-act="csv-stmt">⬇ Excel</button><button class="btn light auto" data-act="rback">رجوع</button></div>
+  </div>
+  <div class="rptwrap" id="rptwrap"><div class="rpt flow" id="rpt">${statementSheet(s)}</div></div>`;
 }
