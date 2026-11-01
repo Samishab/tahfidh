@@ -536,7 +536,7 @@ function viewManage() {
       <div class="t"><b>${esc(s.name)}</b><small>${db.users.filter(u => u.school_id === s.id && u.role === 'teacher').length} معلم • ${db.students.filter(x => x.school_id === s.id).length} طالب</small></div></div>`).join('')
       : empty('🏫', 'لا توجد مدارس — أضف أول مدرسة');
   } else {
-    const us = db.users.filter(u => u.role === st.mt);
+    const us = db.users.filter(u => st.mt === 'teacher' ? (u.role === 'teacher' || (u.role === 'school_admin' && u.solo)) : st.mt === 'school_admin' ? (u.role === 'school_admin' && !u.solo) : u.role === st.mt);
     list = us.length ? us.map(u => {
       const kids = u.role === 'parent' ? db.students.filter(s => s.parents.includes(u.id)).map(s => s.name) : [];
       const sub = u.role === 'school_admin' ? schoolName(u.school_id) + (u.solo ? ' • معلم مستقل' : '') : u.role === 'teacher' ? `${schoolName(u.school_id)} • ${db.students.filter(s => s.teacher_id === u.id).length} طالب` : u.role === 'parent' ? (kids.length ? 'الأبناء: ' + kids.join('، ') : 'غير مرتبط بطالب') : '';
@@ -584,7 +584,7 @@ function userForm(u) {
     <div><label class="f">${r === 'parent' ? 'رقم الجوال (يستخدم لتسجيل الدخول)' : 'اسم المستخدم'}</label><input name="username" required value="${esc(u?.username)}" inputmode="${r === 'parent' ? 'tel' : 'text'}" autocapitalize="off"></div>
     <div><label class="f">جوال للواتساب <span class="hint">(اختياري)</span></label><input name="phone" type="tel" inputmode="tel" value="${esc(u?.phone)}" placeholder="05xxxxxxxx أو 9665xxxxxxxx"></div>
     ${isAdmin() && r !== 'admin' ? `<div><label class="f">المدرسة</label><select name="school">${db.schools.map(x => `<option value="${x.id}" ${u && u.school_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
-    ${isAdmin() && r === 'teacher' ? `<label class="row" style="gap:8px"><input type="checkbox" name="qiraat" style="width:auto;flex:none" ${u && u.qiraat ? 'checked' : ''}> يُقرئ بالقراءات العشر (بالإضافة إلى حفص)</label>` : ''}
+    ${isAdmin() && (r === 'teacher' || (u && u.solo)) ? `<label class="row" style="gap:8px"><input type="checkbox" name="qiraat" style="width:auto;flex:none" ${u && u.qiraat ? 'checked' : ''}> يُقرئ بالقراءات العشر (بالإضافة إلى حفص)</label>` : ''}
     ${u ? `<label class="row" style="gap:8px"><input type="checkbox" name="active" style="width:auto;flex:none" ${u.active ? 'checked' : ''}> الحساب مفعّل</label>` : '<p class="hint">ستُنشأ كلمة مرور مؤقتة تظهر لك بعد الحفظ لترسلها له.</p>'}
     <button class="btn block">حفظ</button>
     ${u ? `<button type="button" class="btn ghost block" data-act="reset-pw" data-id="${u.id}">🔑 إعادة تعيين كلمة المرور</button>

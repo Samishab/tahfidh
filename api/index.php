@@ -326,7 +326,7 @@ try {
         $me = need('admin', 'school_admin'); $b = body(); $id = (int)($b['id'] ?? 0); $sa = $me['role'] === 'school_admin';
         $name = str('name', 120); $un = normUser(str('username', 60)); $phone = preg_replace('/[^\d+]/', '', str('phone', 30));
         $role = $b['role'] ?? ''; $school = (int)($b['school_id'] ?? 0) ?: null; $active = !isset($b['active']) || $b['active'] ? 1 : 0;
-        $qi = !empty($b['qiraat']) ? 1 : 0; $keepQ = 0;
+        $qi = !empty($b['qiraat']) ? 1 : 0; $keepQ = 0; $isSolo = false;
         if ($name === '') fail('الاسم مطلوب');
         uniqueUsername($un, $id);
         $allowed = $sa ? ['teacher', 'parent'] : ['admin', 'school_admin', 'teacher', 'parent'];
@@ -335,14 +335,14 @@ try {
             if (!$old || $old['role'] === 'student') fail('مستخدم غير موجود', 404);
             if ($sa && (!in_array($old['role'], $allowed, true) || !mgrOwns($me, $old['school_id']))) fail('غير مصرح', 403);
             if ($id === (int)$me['id'] && !$active) fail('لا يمكنك تعطيل حسابك');
-            $role = $old['role']; $keepQ = (int)$old['qiraat'];
+            $role = $old['role']; $keepQ = (int)$old['qiraat']; $isSolo = !empty($old['solo']);
         } elseif (!in_array($role, $allowed, true)) fail('نوع الحساب غير صحيح');
         if ($sa) $school = (int)$me['school_id'];
         if ($role === 'admin') $school = null; elseif (!$school) fail('اختر المدرسة');
         if ($school && !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('مدرسة غير صحيحة');
         if ($role === 'school_admin' && q("SELECT 1 FROM users WHERE role='school_admin' AND school_id=? AND id<>?", [$school, $id])->fetchColumn())
             fail('لهذه المدرسة مدير بالفعل (مدير واحد لكل مدرسة)');
-        $qv = $role === 'teacher' ? $qi : $keepQ;
+        $qv = ($role === 'teacher' || $isSolo) ? $qi : $keepQ;
         $pw = null;
         if ($id) {
             q('UPDATE users SET name=?, username=?, phone=?, school_id=?, active=?, qiraat=? WHERE id=?', [$name, $un, $phone, $school, $active, $qv, $id]);
