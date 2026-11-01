@@ -53,7 +53,7 @@ function reportSheet(s, off) {
   const avg = graded ? gr.reduce((x, [n, c]) => x + GP[n] * c, 0) / graded : 0;
   const avgLbl = graded ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—';
   const days = g.days.size, att = Math.round(days * 100 / m.days);
-  const t = userById(s.teacher_id), lastH = lastOf(s.id, 'hifz');
+  const t = userById(s.teacher_id), lastH = lastOf(s.id, 'hifz', s.riwaya || 'hafs');
   const shown = recs.slice(-7), more = recs.length - shown.length;
   const notes = recs.filter(r => r.note).slice(-2);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
@@ -68,7 +68,7 @@ function reportSheet(s, off) {
 
   <div class="rp-st">
     <div class="rp-av">${initial(s.name)}</div>
-    <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</p>
+    <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : '', s.riwaya && s.riwaya !== 'hafs' ? 'رواية ' + RW[s.riwaya].label : ''].filter(Boolean).map(esc).join(' • ')}</p>
       ${lastH ? `<p class="rp-last">📍 آخر موضع حفظ: <b>${recText(lastH)}</b></p>` : ''}</div>
     <div class="rp-ring">${svgRing(pct, '#d4a437', pct.toFixed(1) + '%', `${total} آية من القرآن`)}</div></div>
 
@@ -92,7 +92,7 @@ function reportSheet(s, off) {
   <div class="rp-box rp-tbl"><h3>📋 سجل التسميع ${recs.length ? `<span>${recs.length} تسميع</span>` : ''}</h3>
     ${recs.length ? `<table><tr><th>اليوم</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th></tr>
       ${shown.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${r.type === 'hifz' ? 'h' : 'r'}">${r.type === 'hifz' ? 'حفظ' : 'مراجعة'}</em></td>
-        <td><b>${Q.name(r.surah)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})</small></td><td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
+        <td><b>${Q.name(r.surah)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.riwaya && r.riwaya !== 'hafs' ? ' • ' + RW[r.riwaya].short : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
       ${more > 0 ? `<p class="rp-cap">+ ${more} تسميعات أخرى سابقة في هذا الشهر</p>` : ''}` : '<p class="rp-cap" style="padding:14px 0">لا يوجد تسميع مسجل في هذا الشهر</p>'}</div>
 
   ${notes.length ? `<div class="rp-box rp-notes"><h3>📝 ملاحظات المعلم</h3>${notes.map(r => { const d = parse(r.date); return `<p>• <b>${d.getDate()}/${d.getMonth() + 1}</b> — ${esc(r.note)}</p>`; }).join('')}</div>` : ''}
@@ -114,7 +114,8 @@ function viewReport() {
 }
 function fitReport() {
   const w = $('#rptwrap'), r = $('#rpt'); if (!w || !r) return;
-  const k = Math.min(1, w.clientWidth / 794);
-  r.style.transform = `scale(${k})`; w.style.height = Math.round(1123 * k) + 'px';
+  const bw = +r.dataset.w || 794, bh = r.classList.contains('flow') ? r.scrollHeight : (+r.dataset.h || 1123);
+  const k = Math.min(1, w.clientWidth / bw);
+  r.style.transform = `scale(${k})`; w.style.height = Math.round(bh * k) + 'px';
 }
 addEventListener('resize', fitReport);

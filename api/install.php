@@ -6,6 +6,10 @@ $cfg = require dirname(__DIR__, 2) . '/tahfidh_config.php';
 $pdo = new PDO("mysql:host={$cfg['db_host']};dbname={$cfg['db_name']};charset=utf8mb4", $cfg['db_user'], $cfg['db_pass'],
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 foreach (array_filter(array_map('trim', explode(';', file_get_contents(__DIR__ . '/schema.sql')))) as $sql) $pdo->exec($sql);
+// ترقية قواعد قائمة: عمود الرواية + خيار القراءات للمعلم
+foreach ([['records', 'riwaya', "VARCHAR(20) NOT NULL DEFAULT 'hafs'"], ['students', 'riwaya', "VARCHAR(20) NOT NULL DEFAULT 'hafs'"], ['users', 'qiraat', 'TINYINT(1) NOT NULL DEFAULT 0']] as [$t, $c, $def])
+    if (!$pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='$t' AND COLUMN_NAME='$c'")->fetchColumn())
+        $pdo->exec("ALTER TABLE $t ADD COLUMN $c $def");
 echo "الجداول جاهزة\n";
 if (!$pdo->query("SELECT COUNT(*) FROM users WHERE role='admin'")->fetchColumn()) {
     $a = 'abcdefghjkmnpqrstuvwxyz23456789'; $pw = '';

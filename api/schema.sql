@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone VARCHAR(30) NULL,
   pass_hash VARCHAR(255) NOT NULL,
   active TINYINT(1) NOT NULL DEFAULT 1,
+  qiraat TINYINT(1) NOT NULL DEFAULT 0,
   must_change TINYINT(1) NOT NULL DEFAULT 1,
   last_login DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS students (
   school_id INT UNSIGNED NULL,
   teacher_id INT UNSIGNED NULL,
   grp VARCHAR(80) NULL,
+  riwaya VARCHAR(20) NOT NULL DEFAULT 'hafs',
   user_id INT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_teacher (teacher_id),
@@ -50,6 +52,7 @@ CREATE TABLE IF NOT EXISTS records (
   ayah_from SMALLINT UNSIGNED NOT NULL,
   ayah_to SMALLINT UNSIGNED NOT NULL,
   grade VARCHAR(20) NOT NULL DEFAULT '',
+  riwaya VARCHAR(20) NOT NULL DEFAULT 'hafs',
   note TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_student_date (student_id, rec_date)
@@ -92,4 +95,25 @@ CREATE TABLE IF NOT EXISTS signup_requests (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_req_user (username),
   KEY idx_req_ip (ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS certificates (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  serial VARCHAR(24) NOT NULL,
+  student_id INT UNSIGNED NOT NULL,
+  student_name VARCHAR(120) NOT NULL,
+  school_name VARCHAR(120) NOT NULL DEFAULT '',
+  kind ENUM('khatm','period','custom') NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  riwaya VARCHAR(20) NOT NULL DEFAULT 'hafs',
+  period_from DATE NULL,
+  period_to DATE NULL,
+  grade VARCHAR(20) NOT NULL DEFAULT '',
+  note VARCHAR(300) NULL,
+  issued_by INT UNSIGNED NULL,
+  issuer_name VARCHAR(120) NOT NULL DEFAULT '',
+  issued_at DATE NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_serial (serial),
+  KEY idx_cert_student (student_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
