@@ -21,15 +21,20 @@ async function api(route, body, qs = '') {
 }
 
 /* ---------- البيانات ---------- */
-const blank = () => ({ me: null, school: null, schools: [], users: [], students: [], records: [], messages: [], reads: {}, requests: [], certs: [], enrollments: [] });
+const blank = () => ({ me: null, app: null, school: null, schools: [], users: [], students: [], records: [], messages: [], reads: {}, requests: [], certs: [], enrollments: [] });
 let db = blank();
-const refresh = async () => { db = Object.assign(blank(), await api('bootstrap')); };
+let WS = 6;                                                                  // أول يوم في الأسبوع (من إعدادات المنصة)
+const refresh = async () => { db = Object.assign(blank(), await api('bootstrap', null, st.fs ? '&school=' + encodeURIComponent(st.fs) : '')); if (db.app) WS = db.app.week_start; };
 const role = () => db.me.role;
 const isAdmin = () => role() === 'admin';                         // مدير النظام (المنصة)
 const isMgr = () => role() === 'admin' || role() === 'school_admin'; // مدير النظام أو مدير مدرسة
 const staff = () => role() === 'admin' || role() === 'school_admin' || role() === 'teacher';
 const roleLabel = u => u.solo ? 'معلم مستقل' : ROLE_AR[u.role];
-const brand = () => db.school || { name: 'متابعة التحفيظ', logo: '' };
+const platformBrand = () => { const b = (db.app && db.app.brand) || (st.site && st.site.brand) || {}; return { name: b.name || 'سَنَد', tagline: b.tagline || '', logo: b.logo || '' }; };
+const brand = () => db.school || platformBrand();                           // مدير النظام: هوية المنصة؛ غيره: هوية مدرسته
+const brandFor = id => db.schools.find(x => x.id === +id) || brand();          // هوية مدرسة الطالب في الكشوف المطبوعة
+const teacherNames = s => (s.teachers || (s.teacher_id ? [s.teacher_id] : [])).map(id => (userById(id) || (+id === db.me.id ? db.me : null) || {}).name).filter(Boolean).join('، ');
+const tObj = s => { const n = teacherNames(s); return n ? { name: n } : null; };
 const student = id => db.students.find(s => s.id === +id);
 const userById = id => db.users.find(u => u.id === +id);
 const schoolName = id => (db.schools.find(s => s.id === id) || {}).name || '';
@@ -39,7 +44,7 @@ const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-const weekStart = d => addDays(d, -((d.getDay() + 1) % 7));
+const weekStart = d => addDays(d, -((d.getDay() - WS + 7) % 7));
 const L = 'ar-u-nu-latn';
 const fmtDay = d => d.toLocaleDateString(L, { weekday: 'long' });
 const fmtG = d => d.toLocaleDateString(L, { day: 'numeric', month: 'long', year: 'numeric' });
@@ -49,7 +54,8 @@ const fmtT = s => new Date(s).toLocaleString(L, { day: 'numeric', month: 'short'
 const today = () => ymd(new Date());
 
 /* ---------- الحالة ---------- */
-const st = { view: 'home', ready: false, sid: null, mode: 'week', off: 0, q: '', form: null, thread: null, draft: '', mt: 'requests', tmpLogo: null, ro: 0, pubSchools: [], tk: 0, signupDone: false, mo: -1, mschool: '', cid: null, verify: null };
+const st = { view: 'home', ready: false, sid: null, mode: 'week', off: 0, q: '', form: null, thread: null, draft: '', mt: 'requests', tmpLogo: null, ro: 0, pubSchools: [], tk: 0, signupDone: false, mo: -1, mschool: '', cid: null, verify: null,
+  fs: (() => { try { return localStorage.getItem('tahfidh_fs') || ''; } catch { return ''; } })(), site: null, lm: '', otp: null, adm: {}, mtInit: false, cf: '', ct: '', sq: '' };
 
 const rEnd = r => r.surahTo || r.surah;                                    // سورة نهاية التسميع
 const ayahs = r => Q.abs(rEnd(r), r.to) - Q.abs(r.surah, r.from) + 1;      // عدد الآيات ولو امتد عدة سور
@@ -141,46 +147,70 @@ const PLATFORM_STATUS = {
   badge: '🧪 نسخة تجريبية • مجانية حالياً',
   note: 'المنصة في مرحلة التجربة والتطوير، والاستخدام مجاني خلال هذه الفترة. قد تُضاف ميزات جديدة وقد يتغير بعضها، وملاحظاتك تساعدنا على تحسينها.'
 };
-const betaPill = () => PLATFORM_STATUS ? `<span class="beta">${esc(PLATFORM_STATUS.badge)}</span>` : '';
-const betaNote = () => PLATFORM_STATUS ? `<div class="betanote">ℹ️ ${esc(PLATFORM_STATUS.note)}</div>` : '';
+const beta = () => (st.site && st.site.beta) || PLATFORM_STATUS;
+const betaPill = () => beta() && beta().badge ? `<span class="beta">${esc(beta().badge)}</span>` : '';
+const betaNote = () => beta() && beta().note ? `<div class="betanote">ℹ️ ${esc(beta().note)}</div>` : '';
 
 /* ---------- الدخول ---------- */
+const LM = { email: ['📧 بالبريد', 'email'], wa: ['💬 واتساب', 'wa'], sms: ['📱 رسالة', 'sms'], pw: ['🔑 كلمة المرور', 'pw'] };
+function loginMethods() {
+  const m = (st.site && st.site.methods) || { password: true, email: true };
+  return ['email', 'wa', 'sms'].filter(k => m[k]).concat(m.password !== false ? ['pw'] : []);
+}
 function renderLogin() {
-  $('#app').innerHTML = `
-  <div class="auth">
-    <div class="verse top">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
-    <div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>سجّل دخولك لمتابعة الحفظ والمراجعة</p>${betaPill()}</div>
-    <div class="card">
-      <h3>👋 تسجيل الدخول</h3>
+  const ms = loginMethods(), cur = ms.includes(st.lm) ? st.lm : (ms[0] || 'pw'), br = platformBrand(), o = st.otp && st.otp.ch === cur ? st.otp : null;
+  const otpBlock = !o || !o.sent ? `
+      <form id="otpsend" class="gap">
+        <div><label class="f">${cur === 'email' ? 'بريدك الإلكتروني' : 'رقم جوالك'}</label>
+          <input name="ident" required value="${esc(o ? o.ident : '')}" ${cur === 'email' ? 'type="email" inputmode="email" autocomplete="email" placeholder="name@example.com"' : 'type="tel" inputmode="tel" autocomplete="tel" placeholder="05xxxxxxxx"'} autocapitalize="off" autofocus></div>
+        <button class="btn block">إرسال رمز الدخول</button>
+        <p class="hint" style="text-align:center;margin:0">سيصلك رمز من 6 أرقام ${cur === 'email' ? 'على بريدك' : cur === 'wa' ? 'على واتساب' : 'برسالة نصية'} — دون كلمة مرور.</p>
+      </form>` : `
+      <form id="otpform" class="gap">
+        <div class="info" style="text-align:start">✅ أرسلنا رمزاً إلى <b dir="ltr">${esc(o.ident)}</b><br><small>أدخل الرمز المكوّن من 6 أرقام (صالح لفترة قصيرة).</small></div>
+        <input name="code" required inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\d{6}" placeholder="••••••" style="text-align:center;font-size:26px;letter-spacing:10px;font-weight:800" autofocus>
+        <label class="row" style="gap:8px;font-size:14px"><input type="checkbox" name="rem" style="width:auto;flex:none" checked> تذكّر دخولي على هذا الجهاز</label>
+        <button class="btn block">تأكيد ودخول</button>
+        <div class="row"><button type="button" class="btn light sm" data-act="otp-resend" id="otp_resend">إعادة إرسال الرمز</button><button type="button" class="btn light sm" data-act="otp-change">تغيير ${cur === 'email' ? 'البريد' : 'الرقم'}</button></div>
+      </form>`;
+  const pwBlock = `
       <form id="login" class="gap">
-        <div><label class="f">رقم الجوال / اسم المستخدم</label><input name="username" required autocomplete="username" autocapitalize="off" inputmode="text" autofocus></div>
+        <div><label class="f">البريد الإلكتروني / رقم الجوال / اسم المستخدم</label><input name="username" required autocomplete="username" autocapitalize="off" inputmode="text" autofocus></div>
         <div><label class="f">كلمة المرور</label>
           <div class="pwbox"><input name="pw" id="pw" type="password" required autocomplete="current-password"><button type="button" data-act="showpw">👁</button></div></div>
         <label class="row" style="gap:8px;font-size:14px"><input type="checkbox" name="rem" style="width:auto;flex:none" checked> تذكّر دخولي على هذا الجهاز</label>
         <button class="btn block">دخول</button>
-        <button type="button" class="btn ghost block" data-act="signup">📝 طلب تسجيل حساب جديد</button>
-        <p class="hint" style="text-align:center;margin:0">الحساب الجديد يُفعَّل بعد موافقة إدارة المدرسة.</p>
-      </form>
+      </form>`;
+  $('#app').innerHTML = `
+  <div class="auth">
+    <div class="verse top">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
+    <div class="brand">${logoImg()}<h1>${esc(br.name)}</h1><p>${esc(br.tagline || 'سجّل دخولك لمتابعة الحفظ والمراجعة')}</p>${betaPill()}</div>
+    <div class="card">
+      <h3>👋 تسجيل الدخول</h3>
+      ${ms.length > 1 ? `<div class="seg" style="margin-bottom:12px">${ms.map(k => `<button class="${cur === k ? 'on' : ''}" data-act="lm" data-id="${k}" style="font-size:13px">${LM[k][0]}</button>`).join('')}</div>` : ''}
+      ${ms.length ? (cur === 'pw' ? pwBlock : otpBlock) : '<div class="info err">الدخول متوقف مؤقتاً، حاول لاحقاً.</div>'}
+      ${!st.site || st.site.reg_open !== false ? '<button type="button" class="btn ghost block" style="margin-top:12px" data-act="signup">📝 طلب تسجيل جديد</button><p class="hint" style="text-align:center;margin:8px 0 0">التسجيل الجديد يُفعَّل بعد موافقة الإدارة.</p>' : ''}
     </div>
     ${betaNote()}
   </div>`;
 }
 function renderSignup() {
-  const d = st.signupDone;
+  const d = st.signupDone, br = platformBrand();
   $('#app').innerHTML = `
   <div class="auth"><div class="brand">${logoImg()}<h1>تسجيل جديد</h1><p>سيُراجع طلبك ويُفعَّل بعد الموافقة</p>${betaPill()}</div>
-    <div class="card">${d ? `<div class="empty"><span class="ico">✅</span><b>تم إرسال طلبك</b><br>ستراجعه الإدارة، وبعد الموافقة تدخل برقم جوالك وكلمة المرور التي اخترتها.</div><button class="btn block" data-act="to-login">العودة لتسجيل الدخول</button>` : `
+    <div class="card">${d ? `<div class="empty"><span class="ico">✅</span><b>تم إرسال طلبك</b><br>ستراجعه الإدارة، وبعد الموافقة تصلك رسالة على بريدك وتدخل ببريدك برمز يصلك.</div><button class="btn block" data-act="to-login">العودة لتسجيل الدخول</button>` : `
     <form id="signupform" class="gap">
       <div><label class="f">نوع التسجيل</label><select name="role" id="su_role"><option value="solo">🧑‍🏫 معلم مستقل (حلقتي الخاصة)</option><option value="school">🏫 مدرسة / مقرأة (لها مدير ومعلمون)</option></select></div>
       <div><label class="f">الاسم الكامل</label><input name="name" required></div>
-      <div><label class="f">رقم الجوال (اسم الدخول)</label><input name="username" required inputmode="tel" autocapitalize="off" placeholder="05xxxxxxxx"></div>
+      <div><label class="f">البريد الإلكتروني <span class="hint">(اسم الدخول، وعليه يصلك رمز الدخول)</span></label><input name="email" type="email" required inputmode="email" autocapitalize="off" autocomplete="email" placeholder="name@example.com"></div>
+      <div><label class="f">رقم الجوال <span class="hint">(اختياري)</span></label><input name="phone" type="tel" inputmode="tel" placeholder="05xxxxxxxx"></div>
       <div id="su_sname"><label class="f" id="su_snl">اسم الحلقة <span class="hint">(اختياري)</span></label><input name="sname" maxlength="120" placeholder="مثال: حلقة الشيخ ..."></div>
       <div><label class="f">كلمة المرور (٦ أحرف على الأقل)</label><input name="pw" type="password" minlength="6" required autocomplete="new-password"></div>
       <div><label class="f">تأكيد كلمة المرور</label><input name="pw2" type="password" minlength="6" required autocomplete="new-password"></div>
       <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button class="btn block gold">إرسال الطلب</button><button type="button" class="btn light block" data-act="to-login">رجوع</button>
     </form>`}</div>
-    <div class="betanote">المعلمون والطلاب وأولياء الأمور لا يسجّلون بأنفسهم: يضيفهم مدير المدرسة أو المعلم المستقل، ثم يدخلون ببيانات يرسلها لهم.</div>
+    <div class="betanote">المعلمون والطلاب وأولياء الأمور لا يسجّلون بأنفسهم: يضيفهم مدير المدرسة أو المعلم المستقل، ثم يدخلون ببريدهم برمز يصلهم.</div>
     ${betaNote()}</div>`;
 }
 function suToggle(r) {
@@ -197,14 +227,14 @@ function renderForce() {
       <button class="btn block gold">حفظ ومتابعة</button><button type="button" class="btn ghost block" data-act="skip-force">لاحقاً — سأغيّرها من «حسابي»</button><button type="button" class="btn light block sm" data-act="logout">تسجيل الخروج</button>
     </form></div></div>`;
 }
-async function logout() { try { await api('logout', {}); } catch { } db = blank(); st.view = 'home'; st.thread = null; st.form = null; st.skipForce = false; render(); }
+async function logout() { try { await api('logout', {}); } catch { } db = blank(); st.otp = null; st.view = 'home'; st.thread = null; st.form = null; st.skipForce = false; render(); }
 
 /* ---------- الإطار ---------- */
 const TITLES = {
   home: () => staff() ? ['الرئيسية', ''] : [role() === 'parent' ? 'أبنائي' : 'متابعتي', ''],
   add: () => ['تسجيل تسميع', 'حفظ جديد أو مراجعة'], students: () => ['الطلاب', ''], student: () => ['ملف الطالب', ''],
   stats: () => ['الإحصائيات', 'أسبوعية وشهرية'], report: () => ['التقرير الشهري', 'قابل للطباعة PDF'], settings: () => ['الإعدادات', 'القراءات'], monthly: () => ['الكشف الشهري', 'إحصائيات الحلقة'], cert: () => ['الشهادة', 'قابلة للطباعة'], statement: () => ['كشف التسميع', 'للفترة المختارة'], messages: () => ['الرسائل', 'ملاحظات واستفسارات'],
-  manage: () => ['الإدارة', 'المدارس والحسابات'], account: () => ['حسابي', '']
+  manage: () => ['الإدارة', 'لوحة التحكم والحسابات'], account: () => ['حسابي', ''], search: () => ['البحث', 'في حدود صلاحياتك']
 };
 function tabsHtml() {
   const v = st.view, n = totalUnread();
@@ -223,8 +253,11 @@ function shell(body) {
   $('#app').innerHTML = `
   <header class="hdr">
     <div class="hdr-row">${logoImg()}<div class="grow"><h1>${esc(brand().name)}</h1><small>${esc(db.me.name)} • ${roleLabel(db.me)}</small></div>
+      <button class="hbtn" data-act="nav" data-id="search" title="بحث">🔍</button>
+      <button class="hbtn" data-act="logout" title="تسجيل الخروج">🚪</button>
       <div style="text-align:end;font-size:12.5px;line-height:1.4"><b>${fmtDay(d)}</b><br>${fmtG(d)}<br>${fmtH(d)}</div></div>
     <div class="pagetitle">${t}${sub ? `<small>${sub}</small>` : ''}</div>
+    ${isAdmin() && db.schools.length > 1 ? `<select id="fschool" class="fsel" title="تصفية بحسب المدرسة"><option value="">🏫 كل المدارس</option>${db.schools.map(x => `<option value="${x.id}" ${+st.fs === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}
   </header>
   <main>${db.me.must_change ? '<div class="card" data-act="nav" data-id="account" style="border:1.5px solid var(--gold);background:var(--gold2);cursor:pointer"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">اضغط هنا لتغييرها متى شئت — لا يمنعك شيء من العمل.</div></div>' : ''}${body}</main>
   <nav class="tabbar">${tabsHtml()}</nav>`;
@@ -250,6 +283,7 @@ function progressCard(s) {
 }
 
 /* ---------- الرئيسية (معلم / مدير) ---------- */
+const annCard = () => db.app && db.app.announce ? `<div class="card" style="border:1.5px solid var(--gold);background:var(--gold2)"><h3>📢 ${esc(db.app.announce.title || 'إعلان')}</h3><div style="white-space:pre-wrap">${esc(db.app.announce.text)}</div></div>` : '';
 function viewHome() {
   if (!staff()) return viewKids();
   const now = new Date(), ws = weekStart(now), a = ymd(ws), b = ymd(addDays(ws, 6));
@@ -260,7 +294,7 @@ function viewHome() {
     .filter(x => x.a.n).sort((x, y) => (y.a.h + y.a.r) - (x.a.h + x.a.r)).slice(0, 3);
   const un = totalUnread();
   return `
-  <div class="stats">
+  ${annCard()}<div class="stats">
     <div class="stat"><b>${td.n}</b><span>تسميع اليوم</span></div>
     <div class="stat gold"><b>${wk.h}</b><span>آيات حفظ الأسبوع</span></div>
     <div class="stat blue"><b>${wk.r}</b><span>آيات مراجعة الأسبوع</span></div>
@@ -280,7 +314,8 @@ function viewHome() {
 }
 
 /* ---------- الرئيسية (ولي أمر / طالب) ---------- */
-function viewKids() {
+const viewKids = () => annCard() + viewKidsBody();
+function viewKidsBody() {
   if (!db.students.length) return `<div class="card">${empty('🔗', 'لم يُربط أي طالب بحسابك بعد.<br>تواصل مع إدارة الحلقة.')}</div>`;
   if (db.students.length === 1) { st.sid = db.students[0].id; return viewStudent(); }
   return `<div class="list">${db.students.map(s => {
@@ -359,12 +394,16 @@ function viewStudents() {
   <p class="hint" style="margin:0 4px 8px">اضغط الطالب للتسميع على برنامجه الحالي، و📂 لملفه وسيرته.</p>
   <div class="card"><div class="row"><input id="q" placeholder="🔍 بحث عن طالب..." value="${esc(st.q)}">${isMgr() ? '<button class="btn auto" data-act="add-student">＋ طالب</button>' : ''}</div></div>
   ${list.length ? `<div class="list">${list.map(s => {
-    const { total, w } = progressCard(s), t = userById(s.teacher_id), un = unread(s.id);
+    const { total, w } = progressCard(s), t = tObj(s), un = unread(s.id);
     return `<div class="item" data-act="quick" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
       <div class="t"><b>${esc(s.name)}</b><small>${esc(curLine(s))}${s.group ? ' • ' + esc(s.group) : ''}${isMgr() && t ? ' • ' + esc(t.name) : ''}</small></div>
       <div class="side"><b>${w.h + w.r + w.q}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div>
       <button class="btn light sm auto" data-act="open-student" data-id="${s.id}" title="ملف الطالب" style="margin-inline-start:6px">📂</button></div>`;
   }).join('')}</div>` : `<div class="card">${empty('👥', db.students.length ? 'لا توجد نتائج' : 'لا يوجد طلاب بعد')}</div>`}`;
+}
+function teacherChecks(school, sel) {
+  const ts = db.users.filter(u => (u.role === 'teacher' || (u.role === 'school_admin' && u.solo)) && (!school || u.school_id === +school));
+  return ts.length ? ts.map(t => `<label><input type="checkbox" name="tch" value="${t.id}" ${(sel || []).includes(t.id) ? 'checked' : ''}> ${esc(t.name)}${t.solo ? ' <small class="hint">معلم مستقل</small>' : ''}</label>`).join('') : '<p class="hint">لا يوجد معلمون في هذه المدرسة بعد.</p>';
 }
 function teacherOptions(school, sel) {
   const ts = db.users.filter(u => (u.role === 'teacher' || (u.role === 'school_admin' && u.solo)) && (!school || u.school_id === +school));
@@ -378,7 +417,7 @@ function studentForm(s) {
   <form id="stform" class="gap" data-id="${s ? s.id : ''}">
     <div><label class="f">اسم الطالب</label><input name="name" required value="${esc(s?.name)}"></div>
     ${isAdmin() ? `<div><label class="f">المدرسة</label><select name="school" id="st_school">${db.schools.map(x => `<option value="${x.id}" ${x.id === sch ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="school" id="st_school" value="${sch}">`}
-    <div><label class="f">المعلم المسؤول</label><select name="teacher" id="st_teacher">${teacherOptions(sch, s ? s.teacher_id : (db.me.solo ? db.me.id : null))}</select></div>
+    <div><label class="f">المعلمون <span class="hint">(يمكن اختيار أكثر من معلم للطالب)</span></label><div class="checks" id="st_teachers">${teacherChecks(sch, s ? (s.teachers || []) : (db.me.solo ? [db.me.id] : []))}</div></div>
     <div><label class="f">البرنامج</label><select name="program" id="st_program"><option value="hifz" ${(s?.program || 'hifz') === 'hifz' ? 'selected' : ''}>📖 حفظ ومراجعة</option>${qiraatAny() || s?.program === 'qiraat' ? `<option value="qiraat" ${s?.program === 'qiraat' ? 'selected' : ''}>📚 قراءات (للحافظين فقط)</option>` : ''}</select></div>
     <div style="border:1.5px solid var(--line);border-radius:14px;padding:12px;background:#fff">
       <label class="row" style="gap:8px"><input type="checkbox" name="hafiz" id="st_hafiz" style="width:auto;flex:none" ${s?.hafiz ? 'checked' : ''}> <b>أتمّ حفظ المصحف كاملاً مسبقاً</b></label>
@@ -387,7 +426,10 @@ function studentForm(s) {
       <input name="prior_where" maxlength="160" style="margin-top:8px" placeholder="عند من / أين أتمّها؟ (اختياري)"></div>` : ''}
     <div><label class="f">المجموعة / الحلقة <span class="hint">(اختياري)</span></label><input name="group" value="${esc(s?.group)}" placeholder="مثال: حلقة الفجر"></div>
     <div><label class="f">أولياء الأمور المرتبطون</label>
-      ${parents.length ? `<div class="checks">${parents.map(p => `<label><input type="checkbox" name="par" value="${p.id}" ${s && s.parents.includes(p.id) ? 'checked' : ''}> ${esc(p.name)} <small class="hint">${esc(p.username)}</small></label>`).join('')}</div>` : '<p class="hint">لا يوجد أولياء أمور بعد — أضفهم من تبويب الإدارة ثم عد لربطهم.</p>'}</div>
+      ${parents.length ? `<div class="checks">${parents.map(p => `<label><input type="checkbox" name="par" value="${p.id}" ${s && s.parents.includes(p.id) ? 'checked' : ''}> ${esc(p.name)} <small class="hint">${esc(p.email || p.username)}</small></label>`).join('')}</div>` : '<p class="hint">لا يوجد أولياء أمور مسجّلون بعد — أضف ولي الأمر هنا بالأسفل.</p>'}</div>
+    <div id="np_box" class="gap" style="border:1.5px dashed var(--g2);border-radius:14px;padding:12px;background:var(--g3)"><label class="f" style="margin:0">➕ ولي أمر جديد <span class="hint">(يُسجَّل ببريده ويُربط بهذا الطالب، وتصله دعوة ويدخل برمز)</span></label>
+      <div class="np_row gap"><input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني (مطلوب)"><input name="np_phone" type="tel" placeholder="الجوال (اختياري)"></div>
+      <button type="button" class="btn light sm" data-act="np-add">＋ ولي أمر آخر</button></div>
     <div><label class="f">دخول الطالب بنفسه <span class="hint">(اختياري — اسم مستخدم)</span></label>
       <input name="login" value="${esc(su?.username)}" placeholder="اتركه فارغاً إن لم يكن للطالب حساب" autocapitalize="off">
       ${su ? `<button type="button" class="btn light sm" style="margin-top:8px" data-act="reset-pw" data-id="${su.id}">🔑 إعادة تعيين كلمة مرور الطالب</button>` : ''}</div>
@@ -407,14 +449,14 @@ function viewStudent() {
     const a = Q.juzAbs[i], e = (Q.juzAbs[i + 1] || Q.TOTAL + 1) - 1; let c = 0;
     for (let k = a; k <= e; k++) c += m[k - 1]; return Math.round(c * 100 / (e - a + 1));
   });
-  const lastH = lastOf(s.id, cur ? 'qiraa' : 'hifz', cur), t = userById(s.teacher_id), un = unread(s.id);
+  const lastH = lastOf(s.id, cur ? 'qiraa' : 'hifz', cur), t = tObj(s), un = unread(s.id);
   const back = staff() ? 'students' : (db.students.length > 1 ? 'home' : '');
   return `
   <div class="card">
     <div class="row" style="margin-bottom:12px">${back ? `<button class="btn light sm auto" data-act="nav" data-id="${back}">→ رجوع</button>` : ''}<span></span>
       ${isMgr() ? `<button class="btn light sm auto" data-act="edit-student" data-id="${s.id}">✏️ تعديل</button>` : ''}</div>
     <div class="item" style="border:0;padding:0;cursor:default"><div class="avatar">${initial(s.name)}</div>
-      <div class="t"><b style="font-size:19px">${esc(s.name)}</b><small>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</small></div></div>
+      <div class="t"><b style="font-size:19px">${esc(s.name)}</b><small>${[schoolName(s.school_id), s.group, t ? ((s.teachers || []).length > 1 ? 'المعلمون: ' : 'المعلم: ') + t.name : ''].filter(Boolean).map(esc).join(' • ')}</small></div></div>
   </div>
   ${tabs.length > 1 ? `<div class="card"><h3>📚 البرنامج</h3><div class="chips">${tabs.map(x => `<button class="chip ${x.k === cur ? 'on' : ''}" data-act="pe" data-id="${x.k}">${esc(x.l)}</button>`).join('')}</div></div>` : ''}
   ${progCard(s)}
@@ -455,44 +497,55 @@ function recTable(recs) {
 function weekReport(s) {
   const ws = weekStart(new Date()), a = ymd(ws), b = ymd(addDays(ws, 6));
   const recs = inRange(a, b).filter(r => r.studentId === s.id).sort((x, y) => x.date.localeCompare(y.date)), g = agg(recs);
-  let t = `📘 *${brand().name}*\nتقرير الطالب: *${s.name}*\nالأسبوع: ${fmtS(ws)} – ${fmtS(addDays(ws, 6))}\n\n`;
+  let t = `📘 *${brandFor(s.school_id).name}*\nتقرير الطالب: *${s.name}*\nالأسبوع: ${fmtS(ws)} – ${fmtS(addDays(ws, 6))}\n\n`;
   t += recs.length ? recs.map(r => `• ${fmtDay(parse(r.date))}: ${typeAr(r)} ${recText(r)}${r.grade ? ' — ' + r.grade : ''}`).join('\n') : 'لا يوجد تسميع هذا الأسبوع';
   return t + `\n\n📖 حفظ: ${g.h} آية\n🔁 مراجعة: ${g.r} آية${g.q ? `\n📚 قراءة: ${g.q} آية` : ''}\n📅 أيام التسميع: ${g.days.size}\n\nالمعلم: ${db.me.name}`;
 }
 
 /* ---------- الإحصائيات ---------- */
+const SMODES = [['week', 'أسبوع'], ['month', 'شهر'], ['quarter', '3 أشهر'], ['year', 'سنة'], ['custom', 'فترة محددة']];
 function period() {
-  const now = new Date();
-  if (st.mode === 'week') {
-    const s = addDays(weekStart(now), st.off * 7), e = addDays(s, 6);
-    return { s, e, title: `${fmtS(s)} – ${fmtS(e)}`, sub: st.off === 0 ? 'هذا الأسبوع' : `قبل ${-st.off} أسبوع`, days: 7 };
+  const now = new Date(), m = st.mode, y = now.getFullYear(), mo = now.getMonth();
+  if (m === 'week') { const a = addDays(weekStart(now), st.off * 7), e = addDays(a, 6); return { s: a, e, title: `${fmtS(a)} – ${fmtS(e)}`, sub: st.off === 0 ? 'هذا الأسبوع' : `قبل ${-st.off} أسبوع`, unit: 'day', head: 'النشاط اليومي' }; }
+  if (m === 'quarter') { const q0 = Math.floor(mo / 3) * 3, a = new Date(y, q0 + st.off * 3, 1), e = new Date(y, q0 + st.off * 3 + 3, 0); return { s: a, e, title: `${a.toLocaleDateString(L, { month: 'short' })} – ${e.toLocaleDateString(L, { month: 'short', year: 'numeric' })}`, sub: st.off === 0 ? 'آخر 3 أشهر من هذا الفصل' : `قبل ${-st.off} فصل`, unit: 'week', head: 'النشاط الأسبوعي' }; }
+  if (m === 'year') { const a = new Date(y + st.off, 0, 1), e = new Date(y + st.off, 11, 31); return { s: a, e, title: String(y + st.off), sub: st.off === 0 ? 'هذه السنة' : `قبل ${-st.off} سنة`, unit: 'month', head: 'النشاط الشهري' }; }
+  if (m === 'custom') {
+    const a = parse(st.cf || ymd(addDays(now, -29))), e = parse(st.ct || today()), n = Math.round((e - a) / 864e5) + 1;
+    return { s: a, e, title: `${fmtS(a)} – ${fmtS(e)}`, sub: `${n} يوم`, unit: n > 93 ? 'month' : n > 31 ? 'week' : 'day', head: n > 93 ? 'النشاط الشهري' : n > 31 ? 'النشاط الأسبوعي' : 'النشاط اليومي', custom: true };
   }
-  const s = new Date(now.getFullYear(), now.getMonth() + st.off, 1), e = new Date(s.getFullYear(), s.getMonth() + 1, 0);
-  return { s, e, title: s.toLocaleDateString(L, { month: 'long', year: 'numeric' }), sub: st.off === 0 ? 'هذا الشهر' : `قبل ${-st.off} شهر`, days: e.getDate() };
+  const a = new Date(y, mo + st.off, 1), e = new Date(a.getFullYear(), a.getMonth() + 1, 0);
+  return { s: a, e, title: a.toLocaleDateString(L, { month: 'long', year: 'numeric' }), sub: st.off === 0 ? 'هذا الشهر' : `قبل ${-st.off} شهر`, unit: 'day', head: 'النشاط اليومي' };
+}
+function buckets(p) {
+  const out = [];
+  if (p.unit === 'day') for (let d = new Date(p.s); d <= p.e; d = addDays(d, 1)) out.push({ a: ymd(d), b: ymd(d), l: (p.e - p.s) / 864e5 < 7 ? fmtDay(d).replace('ال', '') : String(d.getDate()) });
+  else if (p.unit === 'week') for (let d = weekStart(p.s); d <= p.e; d = addDays(d, 7)) out.push({ a: ymd(d), b: ymd(addDays(d, 6)), l: fmtS(d) });
+  else for (let d = new Date(p.s.getFullYear(), p.s.getMonth(), 1); d <= p.e; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) out.push({ a: ymd(d), b: ymd(new Date(d.getFullYear(), d.getMonth() + 1, 0)), l: d.toLocaleDateString(L, { month: 'short' }) });
+  return out;
 }
 function viewStats() {
-  const p = period(), recs = inRange(ymd(p.s), ymd(p.e)), g = agg(recs);
-  const per = Array.from({ length: p.days }, (_, i) => { const d = addDays(p.s, i), a = agg(recs.filter(r => r.date === ymd(d))); return { d, h: a.h, r: a.r, q: a.q }; });
-  const mx = Math.max(1, ...per.map(x => x.h + x.r + x.q)), dense = p.days > 7;
+  const p = period(), a = ymd(p.s), b = ymd(p.e), recs = inRange(a, b), g = agg(recs);
+  const per = buckets(p).map(x => { const y = agg(recs.filter(r => r.date >= x.a && r.date <= x.b)); return { l: x.l, h: y.h, r: y.r, q: y.q }; });
+  const mx = Math.max(1, ...per.map(x => x.h + x.r + x.q)), dense = per.length > 12;
   const grades = GRADES.map(n => [n, recs.filter(r => r.grade === n).length]).filter(x => x[1]);
-  const rows = db.students.map(s => ({ s, a: agg(recs.filter(r => r.studentId === s.id)) })).sort((x, y) => (y.a.h + y.a.r) - (x.a.h + x.a.r));
+  const rows = db.students.map(s => ({ s, a: agg(recs.filter(r => r.studentId === s.id)) })).sort((x, y) => (y.a.h + y.a.r + y.a.q) - (x.a.h + x.a.r + x.a.q));
   return `
   <div class="card">
-    <div class="seg" style="margin-bottom:12px"><button class="${st.mode === 'week' ? 'on' : ''}" data-act="mode" data-id="week">أسبوعي</button><button class="${st.mode === 'month' ? 'on' : ''}" data-act="mode" data-id="month">شهري</button></div>
-    <div class="nav-period"><button data-act="prev">›</button><div>${p.title}<small>${p.sub}</small></div><button data-act="next" ${st.off >= 0 ? 'disabled' : ''}>‹</button></div>
+    <div class="hscroll" style="margin-bottom:12px">${SMODES.map(([k, l]) => `<button class="chip ${st.mode === k ? 'on' : ''}" data-act="mode" data-id="${k}">${l}</button>`).join('')}</div>
+    ${p.custom ? `<div class="row" style="margin-bottom:10px"><div><label class="f">من</label><input type="date" id="scf" value="${a}" max="${today()}"></div><div><label class="f">إلى</label><input type="date" id="sct" value="${b}" max="${today()}"></div></div><div class="hint" style="text-align:center;margin-bottom:10px">${p.title} • ${p.sub}</div>`
+      : `<div class="nav-period"><button data-act="prev">›</button><div>${p.title}<small>${p.sub}</small></div><button data-act="next" ${st.off >= 0 ? 'disabled' : ''}>‹</button></div>`}
     <div class="stats two" style="margin:0">
       <div class="stat"><b>${g.h}</b><span>آيات الحفظ</span></div><div class="stat gold"><b>${g.r}</b><span>آيات المراجعة</span></div>${g.q ? `<div class="stat" style="grid-column:1/-1"><b style="color:#6b73d6">${g.q}</b><span>آيات القراءة (ختمات القراءات)</span></div>` : ''}
       <div class="stat blue"><b>${g.n}</b><span>عدد التسميعات</span></div><div class="stat"><b>${g.students.size}<small style="font-size:14px;color:var(--mut)">/${db.students.length}</small></b><span>الطلاب النشطون</span></div>
     </div>
   </div>
-  <div class="card"><h3>📈 النشاط اليومي</h3>
+  <div class="card"><h3>📈 ${p.head}</h3>
     <div class="chart ${dense ? 'dense' : ''}">${per.map(x => `<div class="col"><b>${x.h + x.r + x.q || ''}</b><div class="bars">
-      <i class="q" style="height:${x.q * 100 / mx}%"></i><i class="r" style="height:${x.r * 100 / mx}%"></i><i class="h" style="height:${x.h * 100 / mx}%"></i></div>
-      <small>${dense ? x.d.getDate() : fmtDay(x.d).replace('ال', '')}</small></div>`).join('')}</div>
+      <i class="q" style="height:${x.q * 100 / mx}%"></i><i class="r" style="height:${x.r * 100 / mx}%"></i><i class="h" style="height:${x.h * 100 / mx}%"></i></div><small>${x.l}</small></div>`).join('')}</div>
     <div class="legend"><span><i style="background:var(--g2)"></i>حفظ</span><span><i style="background:var(--gold)"></i>مراجعة</span>${recs.some(r => r.type === 'qiraa') ? '<span><i style="background:#6b73d6"></i>قراءة</span>' : ''}</div></div>
   ${grades.length ? `<div class="card"><h3>🏅 التقديرات</h3><div class="chips">${grades.map(([n, c]) => `<span class="badge ${gcls(n)}" style="font-size:14px;padding:5px 14px">${n}: ${c}</span>`).join('')}</div></div>` : ''}
   <div class="card"><h3>👥 ${staff() ? 'ترتيب الطلاب' : 'الأبناء'}</h3>${rows.length ? `<div class="tw"><table><tr><th>الطالب</th><th>حفظ</th><th>مراجعة</th><th>أيام</th></tr>
-    ${rows.map(({ s, a }) => `<tr data-act="open-student" data-id="${s.id}" style="cursor:pointer"><td><b>${esc(s.name)}</b></td><td>${a.h}</td><td>${a.r}</td><td>${a.days.size}</td></tr>`).join('')}</table></div>` : empty('👥', 'لا يوجد طلاب')}</div>`;
+    ${rows.map(({ s, a: x }) => `<tr data-act="open-student" data-id="${s.id}" style="cursor:pointer"><td><b>${esc(s.name)}</b></td><td>${x.h}</td><td>${x.r}${x.q ? ` <small style="color:#6b73d6">+${x.q}ق</small>` : ''}</td><td>${x.days.size}</td></tr>`).join('')}</table></div>` : empty('👥', 'لا يوجد طلاب')}</div>`;
 }
 
 /* ---------- الرسائل ---------- */
@@ -518,35 +571,54 @@ function viewThread() {
 }
 
 /* ---------- الإدارة (مدير) ---------- */
+const soloSchool = s => !!s.is_solo || db.users.some(u => u.school_id === s.id && u.solo);
+const mgrOf = s => s.mgr_id ? { id: s.mgr_id, name: s.mgr_name } : (db.users.find(u => u.role === 'school_admin' && u.school_id === s.id) || null);
+const PLAN_AR = { free: 'مجاني', trial: 'تجريبي', paid: 'مدفوع' };
+const schoolState = s => s.active === false ? '⛔ موقوفة' : (s.expires_at && s.expires_at < today() ? '⌛ منتهية' : '');
+const schoolLogoImg = s => s.logo ? `<img class="logo" style="width:44px;height:44px;border-radius:12px" src="${esc(s.logo)}">` : '<div class="avatar">🏫</div>';
 function viewManage() {
-  const rq = ['requests', `الطلبات${db.requests.length ? ' (' + db.requests.length + ')' : ''}`];
-  const T = isAdmin() ? [rq, ['schools', 'المدارس'], ['school_admin', 'مدراء المدارس'], ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['admin', 'مدراء النظام']]
-    : db.me.solo ? [['parent', 'أولياء الأمور'], ['myschool', 'حلقتي']] : [rq, ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['myschool', 'مدرستي']];
+  const rq = ['requests', `📨 الطلبات${db.requests.length ? ' (' + db.requests.length + ')' : ''}`];
+  const T = isAdmin() ? [['overview', '📊 نظرة عامة'], rq, ['schools', '🏫 المدارس'], ['solo', '🧑‍🏫 المعلمون المستقلون'], ['school_admin', '👔 مدراء المدارس'], ['teacher', '👨‍🏫 المعلمون'], ['parent', '👪 أولياء الأمور'], ['admin', '🛡 مدراء النظام'], ['auth', '🔐 الدخول والرموز'], ['platform', '⚙️ المنصة'], ['audit', '🧾 السجل والنسخ']]
+    : db.me.solo ? [['parent', 'أولياء الأمور'], ['myschool', 'حلقتي']] : [[rq[0], 'الطلبات' + (db.requests.length ? ' (' + db.requests.length + ')' : '')], ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['myschool', 'مدرستي']];
+  if (isAdmin() && !st.mtInit) { st.mt = 'overview'; st.mtInit = true; }
   if (!T.some(x => x[0] === st.mt)) st.mt = T[0][0];
-  let list;
+  const chips = isAdmin() ? `<div class="hscroll" style="margin-bottom:12px">${T.map(([k, l]) => `<button class="chip ${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}">${l}</button>`).join('')}</div>`
+    : `<div class="seg" style="margin-bottom:12px;flex-wrap:wrap">${T.map(([k, l]) => `<button class="${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}" style="font-size:13px">${l}</button>`).join('')}</div>`;
+  if (['overview', 'auth', 'platform', 'audit'].includes(st.mt)) return `<div class="card">${chips}</div>${adminSection(st.mt)}`;
+  let list, addBtn = '';
   if (st.mt === 'requests') {
     list = db.requests.length ? db.requests.map(r => `<div class="item" data-act="view-request" data-id="${r.id}"><div class="avatar">${{ parent: '👪', teacher: '👨‍🏫', school: '🏫', solo: '🧑‍🏫' }[r.role]}</div>
-      <div class="t"><b>${esc(r.name)}</b><small>${r.role === 'school' ? 'تسجيل مدرسة: ' + esc(r.school_name) : ROLE_AR[r.role]} • ${esc(r.username)}${r.children ? ' • الأبناء: ' + esc(r.children) : ''}</small></div><div class="side"><small>${fmtT(r.at)}</small></div></div>`).join('')
+      <div class="t"><b>${esc(r.name)}</b><small>${r.role === 'school' ? 'تسجيل مدرسة: ' + esc(r.school_name) : ROLE_AR[r.role]} • ${esc(r.email || r.username)}${r.children ? ' • الأبناء: ' + esc(r.children) : ''}</small></div><div class="side"><small>${fmtT(r.at)}</small></div></div>`).join('')
       : empty('📭', 'لا توجد طلبات تسجيل جديدة');
+    addBtn = '<p class="hint" style="margin:0">اضغط الطلب لمراجعته والموافقة أو الرفض.</p>';
   } else if (st.mt === 'myschool') {
-    list = db.school ? `<div class="item" data-act="edit-school" data-id="${db.school.id}">${db.school.logo ? `<img class="logo" style="width:44px;height:44px;border-radius:12px" src="${esc(db.school.logo)}">` : '<div class="avatar">🏫</div>'}
+    list = db.school ? `<div class="item" data-act="edit-school" data-id="${db.school.id}">${schoolLogoImg(db.school)}
       <div class="t"><b>${esc(db.school.name)}</b><small>اضغط لتعديل الاسم والشعار • ${db.students.length} طالب</small></div></div>` : empty('🏫', 'لا توجد مدرسة');
-  } else if (st.mt === 'schools') {
-    list = db.schools.length ? db.schools.map(s => `<div class="item" data-act="edit-school" data-id="${s.id}">${s.logo ? `<img class="logo" style="width:44px;height:44px;border-radius:12px" src="${esc(s.logo)}">` : '<div class="avatar">🏫</div>'}
-      <div class="t"><b>${esc(s.name)}</b><small>${db.users.filter(u => u.school_id === s.id && u.role === 'teacher').length} معلم • ${db.students.filter(x => x.school_id === s.id).length} طالب</small></div></div>`).join('')
-      : empty('🏫', 'لا توجد مدارس — أضف أول مدرسة');
+    addBtn = '<p class="hint" style="margin:0">مدرستك وكل من فيها تُدار من هنا، ولا يرى غيرك بياناتها.</p>';
+  } else if (st.mt === 'schools' || st.mt === 'solo') {
+    const solo = st.mt === 'solo', ss = db.schools.filter(x => soloSchool(x) === solo);
+    list = ss.length ? ss.map(x => {
+      const m = mgrOf(x), stt = schoolState(x), ns = x.ns ?? db.students.filter(y => y.school_id === x.id).length, nt = x.nt ?? 0;
+      return `<div class="item" data-act="${solo && m ? 'edit-user' : 'edit-school'}" data-id="${solo && m ? m.id : x.id}">${schoolLogoImg(x)}
+        <div class="t"><b>${esc(solo && m ? m.name : x.name)} ${x.plan ? `<span class="badge b-hifz">${PLAN_AR[x.plan] || x.plan}</span>` : ''} ${stt ? `<span class="badge g-إعادة">${stt}</span>` : ''}</b>
+          <small>${solo ? '🧑‍🏫 معلم مستقل • ' + esc(x.name) : '👔 ' + (m ? esc(m.name) : 'بلا مدير') + ' • ' + nt + ' معلم'} • ${ns} طالب</small></div>
+        ${m ? `<button class="btn light sm auto" data-act="reset-pw" data-id="${m.id}" title="إعادة تعيين كلمة المرور">🔑</button>` : ''}
+        ${solo ? `<button class="btn light sm auto" data-act="edit-school" data-id="${x.id}" title="الاشتراك والإعدادات">⚙️</button>` : ''}</div>`;
+    }).join('') : empty(solo ? '🧑‍🏫' : '🏫', solo ? 'لا يوجد معلمون مستقلون بعد' : 'لا توجد مدارس — أضف أول مدرسة');
+    addBtn = solo ? '<button class="btn block gold" data-act="add-user">＋ إضافة معلم مستقل</button>' : '<button class="btn block gold" data-act="add-school">＋ إضافة مدرسة</button>';
   } else {
-    const us = db.users.filter(u => st.mt === 'teacher' ? (u.role === 'teacher' || (u.role === 'school_admin' && u.solo)) : st.mt === 'school_admin' ? (u.role === 'school_admin' && !u.solo) : u.role === st.mt);
+    const us = db.users.filter(u => st.mt === 'teacher' ? u.role === 'teacher' : st.mt === 'school_admin' ? (u.role === 'school_admin' && !u.solo) : u.role === st.mt);
     list = us.length ? us.map(u => {
       const kids = u.role === 'parent' ? db.students.filter(s => s.parents.includes(u.id)).map(s => s.name) : [];
-      const sub = u.role === 'school_admin' ? schoolName(u.school_id) + (u.solo ? ' • معلم مستقل' : '') : u.role === 'teacher' ? `${schoolName(u.school_id)} • ${db.students.filter(s => s.teacher_id === u.id).length} طالب` : u.role === 'parent' ? (kids.length ? 'الأبناء: ' + kids.join('، ') : 'غير مرتبط بطالب') : '';
+      const sub = u.role === 'school_admin' ? schoolName(u.school_id) : u.role === 'teacher' ? `${schoolName(u.school_id)} • ${db.students.filter(s => (s.teachers || []).includes(u.id)).length} طالب` : u.role === 'parent' ? (kids.length ? 'الأبناء: ' + kids.join('، ') : 'غير مرتبط بطالب') : '';
       return `<div class="item" data-act="edit-user" data-id="${u.id}"><div class="avatar">${initial(u.name)}</div>
-        <div class="t"><b>${esc(u.name)} ${u.active ? '' : '<span class="badge g-إعادة">معطّل</span>'}</b><small>${esc(u.username)}${sub ? ' • ' + esc(sub) : ''}</small></div></div>`;
+        <div class="t"><b>${esc(u.name)} ${u.active ? '' : '<span class="badge g-إعادة">معطّل</span>'}</b><small>${esc(u.email || u.username)}${sub ? ' • ' + esc(sub) : ''}</small></div>
+        <button class="btn light sm auto" data-act="reset-pw" data-id="${u.id}" title="إعادة تعيين كلمة المرور">🔑</button></div>`;
     }).join('') : empty('👤', 'لا توجد حسابات في هذا القسم');
+    addBtn = `<button class="btn block gold" data-act="add-user">＋ إضافة ${{ school_admin: 'مدير مدرسة', teacher: 'معلم', parent: 'ولي أمر', admin: 'مدير نظام' }[st.mt]}</button>`;
   }
   return `
-  <div class="card"><div class="seg" style="margin-bottom:12px;flex-wrap:wrap">${T.map(([k, l]) => `<button class="${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}" style="font-size:13px">${l}</button>`).join('')}</div>
-    ${st.mt === 'myschool' ? '<p class="hint" style="margin:0">مدرستك وكل من فيها تُدار من هنا، ولا يرى غيرك بياناتها.</p>' : st.mt === 'requests' ? '<p class="hint" style="margin:0">اضغط الطلب لمراجعته والموافقة أو الرفض.</p>' : `<button class="btn block gold" data-act="${st.mt === 'schools' ? 'add-school' : 'add-user'}">＋ إضافة ${{ schools: 'مدرسة', school_admin: 'مدير مدرسة', teacher: 'معلم', parent: 'ولي أمر', admin: 'مدير نظام' }[st.mt]}</button>`}</div>
+  <div class="card">${chips}${addBtn}</div>
   <div class="list" style="margin-bottom:14px">${list}</div>
   <p class="hint" style="text-align:center">الطلاب تُدار من تبويب «الطلاب». كل شخص يدخل من نفس الرابط ويرى ما يخصه فقط.</p>
   ${accountView()}`;
@@ -556,7 +628,7 @@ function requestModal(r) {
   const kids = r.role === 'parent' ? db.students.filter(x => x.school_id === r.school_id) : [];
   const ic = { parent: '👪', teacher: '👨‍🏫', school: '🏫', solo: '🧑‍🏫' }[r.role], own = r.role === 'school' || r.role === 'solo';
   modal(`<h2>${ic} طلب تسجيل ${r.role === 'school' ? 'مدرسة' : ROLE_AR[r.role]}</h2>
-  <div class="creds"><div><small>الاسم</small><b>${esc(r.name)}</b></div><div><small>رقم الجوال (اسم الدخول)</small><b dir="ltr">${esc(r.username)}</b></div>
+  <div class="creds"><div><small>الاسم</small><b>${esc(r.name)}</b></div><div><small>${r.email ? 'البريد الإلكتروني (اسم الدخول)' : 'رقم الجوال (اسم الدخول)'}</small><b dir="ltr">${esc(r.email || r.username)}</b></div>${r.phone ? `<div><small>الجوال</small><b dir="ltr">${esc(r.phone)}</b></div>` : ''}
     <div><small>${r.role === 'school' ? 'اسم المدرسة المطلوبة' : own ? 'اسم الحلقة' : 'المدرسة'}</small><b>${esc(own ? (r.school_name || 'حلقة ' + r.name) : schoolName(r.school_id)) || '—'}</b></div>${r.children ? `<div><small>الأبناء حسب كتابته</small><b>${esc(r.children)}</b></div>` : ''}</div>
   ${r.role === 'parent' ? `<label class="f">اربطه بأبنائه (اختر من طلاب المدرسة)</label>${kids.length ? `<div class="checks">${kids.map(x => `<label><input type="checkbox" name="rs" value="${x.id}"> ${esc(x.name)}</label>`).join('')}</div>` : '<p class="hint">لا يوجد طلاب بعد — يمكنك الموافقة وربطه لاحقاً من نموذج الطالب.</p>'}`
     : r.role === 'school' ? '<p class="hint">عند الموافقة تُنشأ المدرسة ويصبح صاحب الطلب مديرها، يدير معلميها وطلابها وأولياء أمرها.</p>'
@@ -567,38 +639,58 @@ function requestModal(r) {
 }
 function schoolForm(s) {
   st.tmpLogo = s ? s.logo : '';
+  const adm = isAdmin(), m = s ? mgrOf(s) : null;
   modal(`<h2>${s ? 'تعديل المدرسة' : 'إضافة مدرسة'}</h2>
   <form id="schform" class="gap" data-id="${s ? s.id : ''}">
     <div class="logo-pick"><img class="logo" id="schprev" src="${esc(st.tmpLogo) || 'icon.svg'}"><div style="flex:1"><label class="f">شعار المدرسة</label><input type="file" id="schlogo" accept="image/*" style="padding:8px"></div></div>
     <div><label class="f">اسم المدرسة / الحلقة</label><input name="name" required value="${esc(s?.name)}"></div>
+    ${adm ? `<div class="row"><div><label class="f">الباقة</label><select name="plan">${Object.entries(PLAN_AR).map(([k, l]) => `<option value="${k}" ${(s?.plan || 'free') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div><label class="f">تنتهي في <span class="hint">(اختياري)</span></label><input type="date" name="exp" value="${esc(s?.expires_at || '')}"></div></div>
+      <div><label class="f">أقصى عدد طلاب <span class="hint">(فارغ = بلا حد)</span></label><input type="number" name="maxs" min="0" inputmode="numeric" value="${s?.max_students || ''}"></div>
+      <label class="row" style="gap:8px"><input type="checkbox" name="sactive" style="width:auto;flex:none" ${s && s.active === false ? '' : 'checked'}> الحلقة مفعّلة <small class="hint">(إيقافها يمنع دخول كل من فيها)</small></label>
+      <div><label class="f">ملاحظات داخلية <span class="hint">(لا تظهر لأحد غيرك)</span></label><textarea name="snotes" maxlength="300">${esc(s?.notes || '')}</textarea></div>` : ''}
+    ${s && m ? `<div class="creds"><div><small>${soloSchool(s) ? 'المعلم المستقل' : 'مدير المدرسة'}</small><b>${esc(m.name)}</b></div></div>
+      <div class="row"><button type="button" class="btn ghost sm" data-act="reset-pw" data-id="${m.id}">🔑 إعادة تعيين كلمة المرور</button>${adm ? `<button type="button" class="btn light sm" data-act="edit-user" data-id="${m.id}">✏️ تعديل الحساب</button>` : ''}</div>` : (s && adm ? '<p class="hint">لا يوجد مدير لهذه المدرسة — أضفه من «مدراء المدارس».</p>' : '')}
     <button class="btn block">حفظ</button>
-    ${s ? `<button type="button" class="btn red block" data-act="del-school" data-id="${s.id}">🗑 حذف المدرسة</button>` : ''}
+    ${s && adm ? `<button type="button" class="btn red block" data-act="del-school" data-id="${s.id}">🗑 حذف المدرسة</button>` : ''}
     <button type="button" class="btn light block" data-act="close">إلغاء</button>
   </form>`);
 }
 function userForm(u) {
-  const r = u ? u.role : st.mt;
-  modal(`<h2>${u ? 'تعديل' : 'إضافة'} ${ROLE_AR[r]}</h2>
-  <form id="usform" class="gap" data-id="${u ? u.id : ''}" data-role="${r}">
+  const r = u ? (u.role === 'school_admin' && u.solo ? 'solo' : u.role) : st.mt, isParent = r === 'parent', soloNew = r === 'solo' && !u, soloOld = r === 'solo' && u;
+  const sch = id => schoolName(id), multi = isAdmin() && db.schools.length > 1;
+  modal(`<h2>${u ? 'تعديل' : 'إضافة'} ${r === 'solo' ? 'معلم مستقل' : ROLE_AR[r]}</h2>
+  <form id="usform" class="gap" data-id="${u ? u.id : ''}" data-role="${soloNew ? 'solo' : (u ? u.role : r)}">
     <div><label class="f">الاسم</label><input name="name" required value="${esc(u?.name)}"></div>
-    <div><label class="f">${r === 'parent' ? 'رقم الجوال (يستخدم لتسجيل الدخول)' : 'اسم المستخدم'}</label><input name="username" required value="${esc(u?.username)}" inputmode="${r === 'parent' ? 'tel' : 'text'}" autocapitalize="off"></div>
-    <div><label class="f">جوال للواتساب <span class="hint">(اختياري)</span></label><input name="phone" type="tel" inputmode="tel" value="${esc(u?.phone)}" placeholder="05xxxxxxxx أو 9665xxxxxxxx"></div>
-    ${isAdmin() && r !== 'admin' ? `<div><label class="f">المدرسة</label><select name="school">${db.schools.map(x => `<option value="${x.id}" ${u && u.school_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
-    ${isAdmin() && (r === 'teacher' || (u && u.solo)) ? `<label class="row" style="gap:8px"><input type="checkbox" name="qiraat" style="width:auto;flex:none" ${u && u.qiraat ? 'checked' : ''}> يُقرئ بالقراءات العشر (بالإضافة إلى حفص)</label>` : ''}
-    ${u ? `<label class="row" style="gap:8px"><input type="checkbox" name="active" style="width:auto;flex:none" ${u.active ? 'checked' : ''}> الحساب مفعّل</label>` : '<p class="hint">ستُنشأ كلمة مرور مؤقتة تظهر لك بعد الحفظ لترسلها له.</p>'}
+    <div><label class="f">البريد الإلكتروني ${isParent && !u ? '<span class="hint">(مطلوب — يصله رمز الدخول)</span>' : '<span class="hint">(لتسجيل الدخول برمز)</span>'}</label><input name="email" type="email" inputmode="email" autocapitalize="off" ${isParent && !u ? 'required' : ''} value="${esc(u?.email)}" placeholder="name@example.com"></div>
+    <div><label class="f">الجوال <span class="hint">(اختياري)</span></label><input name="phone" type="tel" inputmode="tel" value="${esc(u?.phone)}" placeholder="05xxxxxxxx أو 9665xxxxxxxx"></div>
+    ${isParent ? '' : `<div><label class="f">اسم المستخدم <span class="hint">(اختياري إن كان له بريد)</span></label><input name="username" value="${esc(u?.username)}" autocapitalize="off"></div>`}
+    ${soloNew ? '<div><label class="f">اسم الحلقة <span class="hint">(اختياري)</span></label><input name="sname" maxlength="120" placeholder="مثال: حلقة الشيخ ..."></div>'
+      : soloOld ? `<input type="hidden" name="school" value="${u.school_id}">`
+      : isAdmin() && r !== 'admin' && !isParent ? `<div><label class="f">المدرسة</label><select name="school">${db.schools.map(x => `<option value="${x.id}" ${u && u.school_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+    ${isParent ? `<div><label class="f">الأبناء المرتبطون <span class="hint">(مطلوب طالب واحد على الأقل)</span></label>
+      ${db.students.length ? `<div class="checks">${db.students.map(s => `<label><input type="checkbox" name="ps" value="${s.id}" ${u && s.parents.includes(u.id) ? 'checked' : ''}> ${esc(s.name)}${multi ? ` <small class="hint">${esc(sch(s.school_id))}</small>` : ''}</label>`).join('')}</div>` : '<p class="hint">أضف طلاباً أولاً من تبويب «الطلاب» ثم اربط ولي الأمر بهم.</p>'}</div>` : ''}
+    ${isAdmin() && (r === 'teacher' || r === 'solo') ? `<label class="row" style="gap:8px"><input type="checkbox" name="qiraat" style="width:auto;flex:none" ${u && u.qiraat ? 'checked' : ''}> يُقرئ بالقراءات العشر (بالإضافة إلى حفص)</label>` : ''}
+    ${u ? `<label class="row" style="gap:8px"><input type="checkbox" name="active" style="width:auto;flex:none" ${u.active ? 'checked' : ''}> الحساب مفعّل</label>` : `<p class="hint">${isParent ? 'ستصله دعوة على بريده، ويدخل ببريده برمز يصله — دون كلمة مرور.' : 'ستُنشأ كلمة مرور مؤقتة تظهر لك بعد الحفظ لترسلها له (ويصله بريد ترحيب إن أدخلت بريده).'}</p>`}
     <button class="btn block">حفظ</button>
     ${u ? `<button type="button" class="btn ghost block" data-act="reset-pw" data-id="${u.id}">🔑 إعادة تعيين كلمة المرور</button>
     <button type="button" class="btn red block" data-act="del-user" data-id="${u.id}">🗑 حذف الحساب</button>` : ''}
     <button type="button" class="btn light block" data-act="close">إلغاء</button>
   </form>`);
 }
-function showCreds(name, username, password, phone) {
+const mailLine = (mail, email) => mail ? (mail.ok ? `<div class="info" style="margin-bottom:10px">📧 أُرسلت رسالة ترحيب إلى <b dir="ltr">${esc(email)}</b></div>` : `<div class="info err" style="margin-bottom:10px">تعذر إرسال البريد: ${esc(mail.error)}</div>`) : '';
+function showCreds(name, username, password, phone, mail, email) {
   const txt = `مرحباً ${name}\nتم إنشاء حسابك في «${brand().name}» لمتابعة الحفظ والمراجعة.\n\nالرابط: ${appUrl()}\nاسم المستخدم: ${username}\nكلمة المرور المؤقتة: ${password}\n\nيرجى تغيير كلمة المرور بعد أول دخول.`;
-  modal(`<h2>✅ بيانات الدخول</h2>
+  modal(`<h2>✅ بيانات الدخول</h2>${mailLine(mail, email)}
   <div class="creds"><div><small>الرابط</small><b>${esc(appUrl())}</b></div><div><small>اسم المستخدم</small><b dir="ltr">${esc(username)}</b></div><div><small>كلمة المرور المؤقتة</small><b dir="ltr">${esc(password)}</b></div></div>
   <p class="hint">احفظها الآن — لن تظهر كلمة المرور مرة أخرى (يمكنك إعادة تعيينها).</p>
   <div class="gap"><button class="btn block" data-act="wa-creds" data-txt="${esc(txt)}" data-phone="${esc(phone || username)}">📲 إرسال بالواتساب</button>
   <button class="btn light block" data-act="copy" data-txt="${esc(txt)}">📋 نسخ الرسالة</button><button class="btn ghost block" data-act="close">إغلاق</button></div>`);
+}
+function showInvite(name, email, mail) {
+  modal(`<h2>${mail && mail.ok ? '✅ تم إنشاء الحساب' : '⚠️ تم إنشاء الحساب'}</h2>${mailLine(mail, email)}
+  <p class="hint">${mail && mail.ok ? `ستصل ${esc(name)} دعوة فيها طريقة الدخول: يكتب بريده ثم الرمز الذي يصله.` : 'الحساب جاهز، وسيستطيع الدخول برمز على بريده بعد إصلاح إعدادات البريد من «الإدارة ← الدخول والرموز».'}</p>
+  <button class="btn block" data-act="close">حسناً</button>`);
 }
 
 /* ---------- حسابي ---------- */
@@ -635,15 +727,18 @@ function resizeLogo(file) {
 /* ---------- الرسم ---------- */
 function render() {
   const fa = document.activeElement && document.activeElement.id;
+  try { document.title = (db.me ? brand() : platformBrand()).name; } catch { }
   if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>جارٍ التحميل...</p></div></div>`; return; }
   if (st.view === 'verify') return renderVerify();
   if (!db.me) { if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
-  const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
+  const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, search: viewSearch, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
   if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
   shell(views[st.view]());
   if (st.view === 'add') updateInfo();
   if (['report', 'monthly', 'cert', 'statement'].includes(st.view)) fitReport();
+  if (st.view === 'manage' && isAdmin()) loadAdminTab();
+  if (st.view === 'search') { const q = $('#sq'); if (q && document.activeElement !== q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
   if (fa === 'msgin' && $('#msgin')) { const m = $('#msgin'); m.focus(); m.setSelectionRange(m.value.length, m.value.length); }
 }
 
@@ -683,7 +778,7 @@ const acts = {
   'cert-enr': (id, el) => certForm(+el.dataset.sid, +id),
   'jam-all': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = ALL20.includes(c.value); }),
   'jam-none': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = false; }),
-  'open-report': id => go('report', { sid: +id, ro: 0 }),
+  'open-report': id => go('report', { sid: +id, ro: new Date().getDate() <= 7 ? -1 : 0 }),
   rprev: () => { st.ro--; render(); },
   rnext: () => { if (st.ro < 0) { st.ro++; render(); } },
   rback: () => go('student'),
@@ -698,8 +793,8 @@ const acts = {
     st.draft = `بخصوص تسميع ${recText(r)} بتاريخ ${r.date}: `; go('messages', { thread: r.studentId });
     setTimeout(() => { const m = $('#msgin'); if (m) { m.focus(); m.setSelectionRange(m.value.length, m.value.length); } }, 60);
   },
-  'open-stmt': id => go('statement', { sid: +id, sp: 'month' }),
-  sp: id => { st.sp = id; render(); },
+  'open-stmt': id => go('statement', { sid: +id, sp: new Date().getDate() <= 7 ? 'last' : 'month' }),
+  sp: id => { if (id === 'custom') { const r = stmtRange(); if (r.a >= '2000') { st.sfrom = st.sfrom || r.a; st.sto = st.sto || r.b; } } st.sp = id; render(); },
   'csv-stmt': () => stmtCsv(),
   'csv-monthly': () => monthlyCsv(),
   'open-monthly': () => go('monthly', { mo: -1 }),
@@ -711,6 +806,9 @@ const acts = {
   'open-thread': id => go('messages', { thread: +id }),
   'close-thread': () => { st.thread = null; st.draft = ''; render(); },
   logout,
+  lm: id => { st.lm = id; render(); },
+  'otp-change': () => { st.otp = null; render(); },
+  'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
   signup: async () => { const r = await api('signup_token'); st.tk = r.tk; st.signupDone = false; st.view = 'signup'; render(); },
   'to-login': () => { st.view = 'home'; st.signupDone = false; render(); },
   'view-request': id => requestModal(db.requests.find(r => r.id === +id)),
@@ -721,12 +819,13 @@ const acts = {
   'req-reject': async id => { if (!confirm('رفض هذا الطلب وحذفه؟')) return; await api('request_reject', { id: +id }); await refresh(); closeModal(); render(); toast('تم رفض الطلب'); },
   /* الإدارة */
   mtab: id => { st.mt = id; render(); },
+  'np-add': () => { const b = $('#np_box'); if (b.querySelectorAll('.np_row').length >= 4) return toast('الحد 4 أولياء أمور في المرة'); const d = document.createElement('div'); d.className = 'np_row gap'; d.innerHTML = '<input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني"><input name="np_phone" type="tel" placeholder="الجوال (اختياري)">'; b.insertBefore(d, b.lastElementChild); },
   'add-school': () => schoolForm(),
   'edit-school': id => schoolForm(db.schools.find(s => s.id === +id)),
   'del-school': async id => { if (!confirm('حذف هذه المدرسة؟')) return; await api('school_delete', { id: +id }); await refresh(); closeModal(); render(); toast('تم الحذف'); },
-  'add-user': () => { if (st.mt !== 'admin' && !db.schools.length) return toast('أنشئ مدرسة أولاً'); userForm(); },
+  'add-user': () => { if (st.mt !== 'admin' && st.mt !== 'solo' && !db.schools.length) return toast('أنشئ مدرسة أولاً'); userForm(); },
   'skip-force': () => { st.skipForce = true; render(); },
-  'edit-user': id => userForm(userById(id)),
+  'edit-user': id => { const u = userById(id); if (!u) return toast('الحساب غير ظاهر مع فلتر المدرسة الحالي — اختر «كل المدارس»'); userForm(u); },
   'del-user': async id => { if (!confirm('حذف هذا الحساب نهائياً؟')) return; await api('user_delete', { id: +id }); await refresh(); closeModal(); render(); toast('تم الحذف'); },
   'reset-pw': async id => {
     if (!confirm('إنشاء كلمة مرور مؤقتة جديدة؟ ستتوقف كلمة المرور الحالية.')) return;
@@ -764,6 +863,16 @@ document.addEventListener('input', e => {
 
 document.addEventListener('submit', run(async e => {
   e.preventDefault(); const f = e.target;
+  if (f.id === 'otpsend') {
+    const cur = st.lm && loginMethods().includes(st.lm) ? st.lm : loginMethods()[0], ident = f.ident.value.trim();
+    await api('otp_send', cur === 'email' ? { channel: 'email', email: ident } : { channel: cur, phone: ident });
+    st.otp = { ch: cur, ident, sent: true }; render(); return;
+  }
+  if (f.id === 'otpform') {
+    const o = st.otp;
+    await api('otp_verify', { ...(o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }), code: f.code.value, remember: f.rem.checked });
+    st.otp = null; await refresh(); st.view = 'home'; render(); return;
+  }
   if (f.id === 'login') {
     await api('login', { username: f.username.value, password: f.pw.value, remember: f.rem.checked });
     await refresh(); st.view = 'home'; render(); return;
@@ -780,7 +889,7 @@ document.addEventListener('submit', run(async e => {
   }
   if (f.id === 'signupform') {
     if (f.pw.value !== f.pw2.value) return toast('كلمتا المرور غير متطابقتين');
-    await api('signup_request', { role: f.role.value, name: f.name.value, username: f.username.value, password: f.pw.value,
+    await api('signup_request', { role: f.role.value, name: f.name.value, email: f.email.value, phone: f.phone.value, password: f.pw.value,
       school_name: f.sname.value, website: f.website.value, tk: st.tk });
     st.signupDone = true; render(); return;
   }
@@ -812,7 +921,8 @@ document.addEventListener('submit', run(async e => {
   }
   if (f.id === 'stform') {
     const r = await api('student_save', {
-      id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_id: +f.teacher.value || 0, group: f.group.value, program: f.program.value, hafiz: f.hafiz.checked || f.program.value === 'qiraat', hafiz_where: f.hafwhere.value, hafiz_note: f.hafnote.value,
+      id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_ids: [...f.querySelectorAll('[name=tch]:checked')].map(x => +x.value), group: f.group.value,
+      new_parents: [...f.querySelectorAll('.np_row')].map(r => ({ name: r.querySelector('[name=np_name]').value.trim(), email: r.querySelector('[name=np_email]').value.trim(), phone: r.querySelector('[name=np_phone]').value.trim() })).filter(x => x.name || x.email), program: f.program.value, hafiz: f.hafiz.checked || f.program.value === 'qiraat', hafiz_where: f.hafwhere.value, hafiz_note: f.hafnote.value,
       prior_list: [...f.querySelectorAll('[name=prk]:checked')].map(x => ({ kind: 'riwaya', riwayat: [x.value], label: RW[x.value].label })), prior_where: f.prior_where ? f.prior_where.value : '',
       parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value
     });
@@ -821,15 +931,21 @@ document.addEventListener('submit', run(async e => {
     return;
   }
   if (f.id === 'schform') {
-    await api('school_save', { id: +f.dataset.id || 0, name: f.name.value, logo: st.tmpLogo || '' });
+    await api('school_save', { id: +f.dataset.id || 0, name: f.name.value, logo: st.tmpLogo || '',
+      ...(f.plan ? { plan: f.plan.value, expires_at: f.exp.value || null, max_students: +f.maxs.value || 0, active: f.sactive.checked, notes: f.snotes.value } : {}) });
     await refresh(); closeModal(); render(); toast('تم الحفظ ✔'); return;
   }
   if (f.id === 'usform') {
-    const id = +f.dataset.id || 0;
-    const r = await api('user_save', { id, role: f.dataset.role, name: f.name.value, username: f.username.value, phone: f.phone.value,
-      school_id: f.school ? +f.school.value : 0, active: f.active ? f.active.checked : true, qiraat: f.qiraat ? f.qiraat.checked : false });
+    const id = +f.dataset.id || 0, role = f.dataset.role, isParent = role === 'parent';
+    const sids = isParent ? [...f.querySelectorAll('[name=ps]:checked')].map(x => +x.value) : [];
+    if (isParent && !sids.length) return toast('اربط ولي الأمر بطالب واحد على الأقل');
+    const email = f.email.value.trim();
+    const r = await api('user_save', { id, role, name: f.name.value, username: f.username ? f.username.value : '', email, phone: f.phone.value,
+      school_id: f.school ? +f.school.value : 0, active: f.active ? f.active.checked : true, qiraat: f.qiraat ? f.qiraat.checked : false, student_ids: sids, school_name: f.sname ? f.sname.value : '' });
     await refresh(); closeModal(); render();
-    if (r.password) showCreds(f.name.value, r.username, r.password, f.phone.value); else toast('تم الحفظ ✔');
+    if (r.password) showCreds(f.name.value, r.username, r.password, f.phone.value, r.mail, email);
+    else if (r.mail) showInvite(f.name.value, email, r.mail);
+    else toast('تم الحفظ ✔');
   }
 }));
 
@@ -842,8 +958,11 @@ document.addEventListener('change', run(async e => {
   if (t.id === 'st_program' && t.value === 'qiraat') $('#st_hafiz').checked = true;
   if (t.id === 'mschool') { st.mschool = t.value; render(); }
   if (t.id === 'sfrom' || t.id === 'sto') { st[t.id] = t.value; render(); }
+  if (t.id === 'smonth' && t.value) { st.sp = t.value; render(); }
+  if (t.id === 'scf' || t.id === 'sct') { st[t.id === 'scf' ? 'cf' : 'ct'] = t.value; render(); }
   if (t.id === 'su_role') suToggle(t.value);
-  if (t.id === 'st_school') $('#st_teacher').innerHTML = teacherOptions(t.value, 0);
+  if (t.id === 'st_school') $('#st_teachers').innerHTML = teacherChecks(t.value, []);
+  if (t.id === 'fschool') { st.fs = t.value; try { localStorage.setItem('tahfidh_fs', st.fs); } catch { } await refresh(); st.adm = {}; render(); }
 }));
 
 /* ---------- تنبيه الرسائل الجديدة ---------- */
@@ -865,6 +984,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
 (async () => {
+  try { st.site = await api('site_info'); } catch { }
   const code = new URLSearchParams(location.search).get('verify');
   if (code) {
     st.verify = { code: code.toUpperCase().slice(0, 24) }; st.view = 'verify'; st.ready = true; render();

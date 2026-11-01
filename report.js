@@ -54,7 +54,7 @@ function reportSheet(s, off) {
   const avg = graded ? gr.reduce((x, [n, c]) => x + GP[n] * c, 0) / graded : 0;
   const avgLbl = graded ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—';
   const days = g.days.size, att = Math.round(days * 100 / m.days);
-  const t = userById(s.teacher_id), lastH = lastOf(s.id, 'hifz');
+  const t = tObj(s), lastH = lastOf(s.id, 'hifz');
   const shown = recs.slice(-7), more = recs.length - shown.length;
   const notes = recs.filter(r => r.note).slice(-2);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
@@ -63,8 +63,8 @@ function reportSheet(s, off) {
 
   return `
   <div class="rp-hd"><div class="rp-pat"></div>
-    <img src="${esc(brand().logo) || 'icon.svg'}" class="rp-logo" alt="">
-    <div class="rp-hd-t"><small>التقرير الشهري للحفظ والمراجعة</small><h1>${esc(brand().name)}</h1></div>
+    <img src="${esc(brandFor(s.school_id).logo) || 'icon.svg'}" class="rp-logo" alt="">
+    <div class="rp-hd-t"><div class="rp-hv">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><small>التقرير الشهري للحفظ والمراجعة</small><h1>${esc(brandFor(s.school_id).name)}</h1></div>
     <div class="rp-month"><b>${m.label}</b><small>${fmtH(m.s)} – ${fmtH(m.e)}</small></div></div>
 
   <div class="rp-st">
@@ -98,8 +98,8 @@ function reportSheet(s, off) {
 
   ${notes.length ? `<div class="rp-box rp-notes"><h3>📝 ملاحظات المعلم</h3>${notes.map(r => { const d = parse(r.date); return `<p>• <b>${d.getDate()}/${d.getMonth() + 1}</b> — ${esc(r.note)}</p>`; }).join('')}</div>` : ''}
 
-  <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>ولي الأمر</div></div>
-  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
+  <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div><span></span>ولي الأمر</div></div>
+  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brandFor(s.school_id).name)}</div>`;
 }
 
 function viewReport() {

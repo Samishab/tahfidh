@@ -12,7 +12,7 @@ function certSheet(c) {
   const extra = c.kind !== 'custom' && c.note ? `<p class="ct-extra">${esc(c.note)}</p>` : '';
   return `
   <div class="ct-frame"><div class="ct-in"><div class="ct-pat"></div>
-    <div class="ct-top"><img class="ct-logo" src="${esc(brand().logo) || 'icon.svg'}" alt=""><div><small>بسم الله الرحمن الرحيم</small><h2>${esc(c.school || brand().name)}</h2></div></div>
+    <div class="ct-top"><img class="ct-logo" src="${esc(brandFor((student(c.studentId) || {}).school_id).logo) || 'icon.svg'}" alt=""><div><small>بسم الله الرحمن الرحيم</small><h2>${esc(c.school || brand().name)}</h2></div></div>
     <div class="ct-orn">❖ ✦ ❖</div>
     <h1 class="ct-title">${esc(c.title)}</h1>
     <p class="ct-l">تشهد إدارة <b>${esc(c.school || brand().name)}</b> بأن الطالب</p>
@@ -71,12 +71,12 @@ function monthlyCsv() {
 }
 function monthlySheet(off, school) {
   const { m, studs, g, per, rows, inactive, top } = monthlyData(off, school);
-  const grp = (db.schools.find(x => x.id === +school) || brand()).name;
+  const BR = brandFor(school ? +school : (studs[0] || {}).school_id), grp = BR.name;
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
   return `
   <div class="rp-hd"><div class="rp-pat"></div>
-    <img src="${esc(brand().logo) || 'icon.svg'}" class="rp-logo" alt="">
-    <div class="rp-hd-t"><small>الكشف الشهري لمتابعة الحفظ والمراجعة</small><h1>${esc(grp)}</h1></div>
+    <img src="${esc(BR.logo) || 'icon.svg'}" class="rp-logo" alt="">
+    <div class="rp-hd-t"><div class="rp-hv">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><small>الكشف الشهري لمتابعة الحفظ والمراجعة</small><h1>${esc(grp)}</h1></div>
     <div class="rp-month"><b>${m.label}</b><small>${fmtH(m.s)} – ${fmtH(m.e)}</small></div></div>
   <div class="rp-kpis">
     ${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}
@@ -89,8 +89,8 @@ function monthlySheet(off, school) {
     ${rows.length ? `<table><tr><th>#</th><th style="text-align:start">الطالب</th><th>حفظ</th><th>مراجعة</th><th>قراءة</th><th>تسميعات</th><th>أيام</th><th>التقدير</th><th style="text-align:start">آخر موضع حفظ</th></tr>
     ${rows.map((r, i) => `<tr><td>${i + 1}</td><td style="text-align:start"><b>${esc(r.s.name)}</b></td><td>${r.x.h}</td><td>${r.x.r}</td><td>${r.x.q || '—'}</td><td>${r.x.n}</td><td>${r.x.days.size}</td><td>${r.avg}</td>
       <td style="text-align:start"><small>${r.last ? Q.name(rEnd(r.last)) + ' ' + r.last.to : '—'}</small></td></tr>`).join('')}</table>` : '<p class="rp-cap">لا يوجد طلاب</p>'}</div>
-  <div class="rp-ft"><div><span></span>المعلم</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>إدارة المدرسة</div></div>
-  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
+  <div class="rp-ft"><div><span></span>المعلم</div><div><span></span>إدارة المدرسة</div></div>
+  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(BR.name)}</div>`;
 }
 function viewMonthly() {
   const m = monthRange(st.mo);
@@ -129,7 +129,8 @@ function downloadCsv(name, rows) {
 /* ---------- كشف تسميع الطالب لفترة مختارة (لكل الأدوار) ---------- */
 function stmtRange() {
   const n = new Date(), p = st.sp || 'month', Y = n.getFullYear(), M = n.getMonth();
-  if (p === 'custom') { const a = st.sfrom || ymd(new Date(Y, M, 1)), b = st.sto || today(); return { a, b, label: `${fmtG(parse(a))} – ${fmtG(parse(b))}` }; }
+  if (p.startsWith('m:')) { const [yy, mm] = p.slice(2).split('-').map(Number), s0 = new Date(yy, mm - 1, 1), e0 = new Date(yy, mm, 0); return { a: ymd(s0), b: ymd(e0), label: s0.toLocaleDateString(L, { month: 'long', year: 'numeric' }) }; }
+  if (p === 'custom') { let a = st.sfrom || ymd(new Date(Y, M, 1)), b = st.sto || today(); if (a > b) [a, b] = [b, a]; return { a, b, label: `${fmtG(parse(a))} – ${fmtG(parse(b))}` }; }
   if (p === 'last') { const s = new Date(Y, M - 1, 1), e = new Date(Y, M, 0); return { a: ymd(s), b: ymd(e), label: s.toLocaleDateString(L, { month: 'long', year: 'numeric' }) }; }
   if (p === '3m') { const s = new Date(Y, M - 2, 1); return { a: ymd(s), b: today(), label: `آخر 3 أشهر (من ${fmtG(s)})` }; }
   if (p === 'all') return { a: '0000-01-01', b: '9999-12-31', label: 'كل الفترات' };
@@ -144,42 +145,57 @@ function stmtCsv() {
   downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'من سورة', 'من آية', 'إلى سورة', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'البرنامج / القراءة', 'ملاحظة']]
     .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), typeAr(x), Q.name(x.surah), x.from, Q.name(rEnd(x)), x.to, ayahs(x), Q.juz(x.surah, x.from, x.to, rEnd(x)).join('-'), x.grade || '', (x.enrollmentId && enrById(x.enrollmentId) ? enrById(x.enrollmentId).label : ''), x.note || ''])));
 }
+function stmtTables(recs) {
+  const secs = [];
+  const hifz = recs.filter(x => x.type === 'hifz'), rev = recs.filter(x => x.type === 'review');
+  if (hifz.length) secs.push({ ic: '📖', title: 'الحفظ', cls: 'h', rows: hifz });
+  if (rev.length) secs.push({ ic: '🔁', title: 'المراجعة', cls: 'r', rows: rev });
+  [...new Set(recs.filter(x => x.type === 'qiraa').map(x => x.enrollmentId))].forEach(id => {
+    const e = enrById(id); secs.push({ ic: '📚', title: 'قراءة: ' + (e ? e.label : 'ختمة'), cls: 'q', rows: recs.filter(x => x.type === 'qiraa' && x.enrollmentId === id), qiraa: true });
+  });
+  return secs.map(sec => {
+    const n = sec.rows.reduce((t0, x) => t0 + ayahs(x), 0), jz = sec.rows.some(x => x.grade) ? '<th>التقدير</th>' : '';
+    return `<div class="rp-box rp-tbl"><h3>${sec.ic} ${esc(sec.title)} <span>${sec.rows.length} تسميع • ${n} آية</span></h3>
+      <table><tr><th>#</th><th>التاريخ</th><th style="text-align:start">السورة والآيات</th><th>الآيات</th><th>الجزء</th>${jz}<th style="text-align:start">ملاحظة</th></tr>
+      ${sec.rows.map((x, i) => { const d = parse(x.date); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td>
+        <td style="text-align:start"><b>${rngName(x)}</b> ${x.from}–${x.to}</td><td>${ayahs(x)}</td>
+        <td>${Q.juz(x.surah, x.from, x.to, rEnd(x)).join('–')}</td>${jz ? `<td>${x.grade || '—'}</td>` : ''}<td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table></div>`;
+  }).join('');
+}
 function statementSheet(s) {
-  const { r, recs } = stmtData(s), g = agg(recs), t = userById(s.teacher_id);
+  const { r, recs } = stmtData(s), g = agg(recs), t = tObj(s);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
   return `
-  <div class="rp-hd"><div class="rp-pat"></div><img src="${esc(brand().logo) || 'icon.svg'}" class="rp-logo" alt="">
-    <div class="rp-hd-t"><small>كشف التسميع</small><h1>${esc(brand().name)}</h1></div>
+  <div class="rp-hd"><div class="rp-pat"></div><img src="${esc(brandFor(s.school_id).logo) || 'icon.svg'}" class="rp-logo" alt="">
+    <div class="rp-hd-t"><div class="rp-hv">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><small>كشف التسميع</small><h1>${esc(brandFor(s.school_id).name)}</h1></div>
     <div class="rp-month"><b style="font-size:15px">${esc(r.label)}</b></div></div>
   <div class="rp-st"><div class="rp-av">${initial(s.name)}</div>
     <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</p></div></div>
   <div class="rp-kpis" style="grid-template-columns:repeat(${g.q ? 5 : 4},1fr)">${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : ''}${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🗓', g.days.size, 'أيام التسميع', '#3b7ddd')}</div>
-  <div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>${recs.length} تسميع</span></h3>
-    ${recs.length ? `<table><tr><th>#</th><th>التاريخ</th><th>النوع</th><th style="text-align:start">السورة والآيات</th><th>الجزء</th><th>التقدير</th><th style="text-align:start">ملاحظة</th></tr>
-      ${recs.map((x, i) => { const d = parse(x.date); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td>
-        <td><em class="${typeCls(x)}">${typeAr(x)}</em></td>
-        <td style="text-align:start"><b>${rngName(x)}</b> ${x.from}–${x.to} <small>(${ayahs(x)})${x.enrollmentId && enrById(x.enrollmentId) ? ' • ' + esc(enrById(x.enrollmentId).label) : ''}</small></td>
-        <td>${Q.juz(x.surah, x.from, x.to, rEnd(x)).join('–')}</td><td>${x.grade || '—'}</td><td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table>`
-      : '<p class="rp-cap" style="padding:16px 0">لا يوجد تسميع في هذه الفترة</p>'}</div>
-  <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>ولي الأمر</div></div>
-  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
+  ${recs.length ? stmtTables(recs) : '<div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>0 تسميع</span></h3><p class="rp-cap" style="padding:16px 0">لا يوجد تسميع في هذه الفترة</p></div>'}
+  <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div><span></span>ولي الأمر</div></div>
+  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brandFor(s.school_id).name)}</div>`;
 }
 function viewStatement() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
   const p = st.sp || 'month', r = stmtRange();
+  const prev = (() => { const n = new Date(), a = ymd(new Date(n.getFullYear(), n.getMonth() - 1, 1)), b = ymd(new Date(n.getFullYear(), n.getMonth(), 0)); return db.records.filter(x => x.studentId === s.id && x.date >= a && x.date <= b).length; })();
+  const emptyHint = p === 'month' && !stmtData(s).recs.length && prev ? `<div class="info" style="text-align:start;margin-bottom:10px">لا يوجد تسميع في هذا الشهر بعد، وفي الشهر الماضي <b>${prev}</b> تسميع. <button class="btn gold sm" data-act="sp" data-id="last" style="margin-top:6px">عرض الشهر الماضي</button></div>` : '';
   const chip = (k, l) => `<button class="chip ${p === k ? 'on' : ''}" data-act="sp" data-id="${k}">${l}</button>`;
   return `
   <div class="card noprint">
     <h3>📑 ${esc(s.name)}</h3>
-    <div class="chips" style="margin-bottom:10px">${chip('month', 'هذا الشهر')}${chip('last', 'الشهر الماضي')}${chip('3m', 'آخر 3 أشهر')}${chip('all', 'الكل')}${chip('custom', 'فترة محددة')}</div>
+    <div class="hscroll" style="margin-bottom:10px">${chip('month', 'هذا الشهر')}${chip('last', 'الشهر الماضي')}${chip('3m', 'آخر 3 أشهر')}${chip('all', 'الكل')}${chip('custom', 'فترة محددة')}</div>
+    <div style="margin-bottom:10px"><select id="smonth" title="اختر شهراً"><option value="">📅 اختر شهراً محدداً...</option>${Array.from({ length: 18 }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1), v = `m:${d.getFullYear()}-${pad(d.getMonth() + 1)}`; return `<option value="${v}" ${p === v ? 'selected' : ''}>${d.toLocaleDateString(L, { month: 'long', year: 'numeric' })}</option>`; }).join('')}</select></div>
     ${p === 'custom' ? `<div class="row" style="margin-bottom:10px"><div><label class="f">من</label><input type="date" id="sfrom" value="${r.a}" max="${today()}"></div><div><label class="f">إلى</label><input type="date" id="sto" value="${r.b}" max="${today()}"></div></div>` : ''}
+    ${emptyHint}
     <div class="row"><button class="btn gold" data-act="print">🖨 طباعة / PDF</button><button class="btn ghost" data-act="csv-stmt">⬇ Excel</button><button class="btn light auto" data-act="rback">رجوع</button></div>
   </div>
   <div class="rptwrap" id="rptwrap"><div class="rpt flow" id="rpt">${statementSheet(s)}</div></div>`;
 }
 
 /* ---------- البرامج: حفظ ومراجعة / قراءات ---------- */
-const canQiraat = s => staff() && (!!db.me.qiraat || (isMgr() && !!(userById(s.teacher_id) || {}).qiraat));
+const canQiraat = s => staff() && (!!db.me.qiraat || (isMgr() && (s.teachers || []).some(id => (userById(id) || {}).qiraat)));
 function readingsDone(sid) {
   const done = new Set();
   enrOf(sid).filter(e => e.status === 'completed').forEach(e => e.riwayat.forEach(k => done.add(k)));

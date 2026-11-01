@@ -7,11 +7,12 @@ CREATE TABLE IF NOT EXISTS schools (
 
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  username VARCHAR(60) NOT NULL,
+  username VARCHAR(190) NOT NULL,
   name VARCHAR(120) NOT NULL,
   role ENUM('admin','school_admin','teacher','parent','student') NOT NULL,
   school_id INT UNSIGNED NULL,
   phone VARCHAR(30) NULL,
+  email VARCHAR(190) NULL,
   pass_hash VARCHAR(255) NOT NULL,
   active TINYINT(1) NOT NULL DEFAULT 1,
   qiraat TINYINT(1) NOT NULL DEFAULT 0,
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_login DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_username (username),
+  UNIQUE KEY uq_email (email),
   KEY idx_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -143,4 +145,53 @@ CREATE TABLE IF NOT EXISTS enrollments (
   created_by INT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_enr_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS settings (
+  k VARCHAR(60) NOT NULL PRIMARY KEY,
+  v MEDIUMTEXT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(190) NOT NULL,
+  code_hash CHAR(64) NOT NULL,
+  attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  used TINYINT(1) NOT NULL DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  ip VARCHAR(45) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_otp_email (email, id),
+  KEY idx_otp_ip (ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS mail_log (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  to_email VARCHAR(190) NOT NULL,
+  subject VARCHAR(190) NOT NULL,
+  kind VARCHAR(30) NOT NULL DEFAULT 'mail',
+  status ENUM('sent','failed') NOT NULL,
+  error VARCHAR(300) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_mail_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS student_teacher (
+  student_id INT UNSIGNED NOT NULL,
+  teacher_id INT UNSIGNED NOT NULL,
+  PRIMARY KEY (student_id, teacher_id),
+  KEY idx_st_teacher (teacher_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NULL,
+  username VARCHAR(190) NOT NULL DEFAULT '',
+  role VARCHAR(20) NOT NULL DEFAULT '',
+  action VARCHAR(40) NOT NULL,
+  target VARCHAR(60) NOT NULL DEFAULT '',
+  detail VARCHAR(250) NOT NULL DEFAULT '',
+  ip VARCHAR(45) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_audit_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
