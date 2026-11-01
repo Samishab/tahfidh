@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   pass_hash VARCHAR(255) NOT NULL,
   active TINYINT(1) NOT NULL DEFAULT 1,
   qiraat TINYINT(1) NOT NULL DEFAULT 0,
+  solo TINYINT(1) NOT NULL DEFAULT 0,
   must_change TINYINT(1) NOT NULL DEFAULT 1,
   last_login DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 
 CREATE TABLE IF NOT EXISTS signup_requests (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  role ENUM('parent','teacher','school') NOT NULL,
+  role ENUM('parent','teacher','school','solo') NOT NULL,
   school_name VARCHAR(120) NULL,
   name VARCHAR(120) NOT NULL,
   username VARCHAR(60) NOT NULL,

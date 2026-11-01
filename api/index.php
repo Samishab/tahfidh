@@ -127,7 +127,7 @@ function msgOut(array $m): array {
 }
 function userOut(array $u): array {
     return ['id' => (int)$u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'],
-        'school_id' => $u['school_id'] ? (int)$u['school_id'] : null, 'phone' => $u['phone'] ?? '', 'active' => (bool)$u['active'], 'qiraat' => (bool)($u['qiraat'] ?? 0),
+        'school_id' => $u['school_id'] ? (int)$u['school_id'] : null, 'phone' => $u['phone'] ?? '', 'active' => (bool)$u['active'], 'qiraat' => (bool)($u['qiraat'] ?? 0), 'solo' => (bool)($u['solo'] ?? 0),
         'last_login' => $u['last_login'] ?? null];
 }
 const MSG_SQL = 'SELECT m.*, u.name sname, u.role srole FROM messages m LEFT JOIN users u ON u.id=m.sender_id';
@@ -168,12 +168,12 @@ function bootstrap(array $u): array {
         $res['users'] = array_map('userOut', q('SELECT * FROM users ORDER BY role, name')->fetchAll());
         $res['requests'] = array_map($reqOut, q('SELECT * FROM signup_requests ORDER BY id')->fetchAll());
     } elseif ($u['role'] === 'school_admin') {
-        $res['users'] = array_map('userOut', q("SELECT * FROM users WHERE school_id=? AND role IN ('teacher','parent','student') ORDER BY role, name", [$u['school_id']])->fetchAll());
+        $res['users'] = array_map('userOut', q("SELECT * FROM users WHERE school_id=? AND (role IN ('teacher','parent','student') OR id=?) ORDER BY role, name", [$u['school_id'], $u['id']])->fetchAll());
         $res['requests'] = array_map($reqOut, q("SELECT * FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher') ORDER BY id", [$u['school_id']])->fetchAll());
     } elseif ($u['role'] === 'parent' || $u['role'] === 'student') {
         // أسماء المعلمين لعرضها فقط
         $res['users'] = array_map(fn($t) => ['id' => (int)$t['id'], 'name' => $t['name'], 'role' => 'teacher'],
-            q("SELECT id,name FROM users WHERE role='teacher' AND id IN (SELECT teacher_id FROM students WHERE id IN ($in))")->fetchAll());
+            q("SELECT id,name FROM users WHERE role IN ('teacher','school_admin') AND id IN (SELECT teacher_id FROM students WHERE id IN ($in))")->fetchAll());
     }
     return $res;
 }
@@ -379,6 +379,7 @@ try {
         $me = need('admin', 'school_admin'); $sa = $me['role'] === 'school_admin'; $b = body(); $id = (int)($b['id'] ?? 0);
         $name = str('name', 120); $grp = str('group', 80); $school = (int)($b['school_id'] ?? 0) ?: null; $teacher = (int)($b['teacher_id'] ?? 0) ?: null;
         if ($sa) $school = (int)$me['school_id'];
+        if ($sa && !$teacher && !empty($me['solo'])) $teacher = (int)$me['id'];
         $parents = array_values(array_unique(array_map('intval', is_array($b['parent_ids'] ?? null) ? $b['parent_ids'] : [])));
         $login = normUser(str('login_username', 60));
         $program = ($b['program'] ?? 'hifz') === 'qiraat' ? 'qiraat' : 'hifz'; $hafiz = !empty($b['hafiz']) ? 1 : 0;
@@ -391,7 +392,7 @@ try {
         if ($name === '') fail('اسم الطالب مطلوب');
         if (!$school || !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('اختر المدرسة');
         if ($teacher) {
-            $t = q("SELECT school_id FROM users WHERE id=? AND role='teacher'", [$teacher])->fetch();
+            $t = q("SELECT school_id FROM users WHERE id=? AND (role='teacher' OR (role='school_admin' AND solo=1))", [$teacher])->fetch();
             if (!$t) fail('المعلم غير صحيح');
             if ((int)$t['school_id'] !== (int)$school) fail('المعلم من مدرسة أخرى');
         }
@@ -537,8 +538,8 @@ try {
     }
 
     /* ----- طلبات التسجيل ----- */
-    case 'public_schools':
-        out(['tk' => time(), 'schools' => array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name']], q('SELECT id,name FROM schools ORDER BY name')->fetchAll())]);
+    case 'signup_token':
+        out(['tk' => time()]);
 
     case 'signup_request': {
         $b = body();
@@ -548,21 +549,15 @@ try {
         if ((int)q('SELECT COUNT(*) FROM signup_requests WHERE ip=? AND created_at > NOW() - INTERVAL 1 HOUR', [ip()])->fetchColumn() >= 3)
             fail('وصلتنا طلباتك، انتظر الموافقة', 429);
         if ((int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn() >= 300) fail('الطلبات ممتلئة حالياً، تواصل مع الإدارة', 429);
-        $role = $b['role'] ?? ''; if (!in_array($role, ['parent', 'teacher', 'school'], true)) fail('نوع الحساب غير صحيح');
+        $role = $b['role'] ?? ''; if (!in_array($role, ['solo', 'school'], true)) fail('نوع التسجيل غير صحيح');
         $name = str('name', 120); $un = normUser(str('username', 60)); $pw = (string)($b['password'] ?? '');
         $school = (int)($b['school_id'] ?? 0) ?: null; $children = str('children', 300); $sname = str('school_name', 120);
         if ($name === '') fail('الاسم مطلوب');
         if (mb_strlen($pw) < 6) fail('كلمة المرور 6 أحرف على الأقل');
         uniqueUsername($un);
         if (q('SELECT 1 FROM signup_requests WHERE username=?', [$un])->fetchColumn()) fail('يوجد طلب بهذا الرقم قيد المراجعة');
-        if ($role === 'school') {
-            if ($sname === '') fail('اكتب اسم المدرسة');
-            $school = null; $children = '';
-        } else {
-            $sname = '';
-            if (!$school || !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('اختر المدرسة');
-            if ($role === 'parent' && $children === '') fail('اكتب اسم ابنك أو أبنائك');
-        }
+        if ($role === 'school' && $sname === '') fail('اكتب اسم المدرسة');
+        $school = null; $children = '';
         q('INSERT INTO signup_requests (role,name,username,pass_hash,school_id,school_name,children,ip) VALUES (?,?,?,?,?,?,?,?)',
             [$role, $name, $un, password_hash($pw, PASSWORD_DEFAULT), $school, $sname, $children, ip()]);
         out(['ok' => true]);
@@ -571,14 +566,15 @@ try {
         $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
         $rq = q('SELECT * FROM signup_requests WHERE id=?', [$id])->fetch();
         if (!$rq) fail('الطلب غير موجود', 404);
-        if ($me['role'] === 'school_admin' && ($rq['role'] === 'school' || !mgrOwns($me, $rq['school_id']))) fail('غير مصرح', 403);
+        if ($me['role'] === 'school_admin' && (in_array($rq['role'], ['school', 'solo'], true) || !mgrOwns($me, $rq['school_id']))) fail('غير مصرح', 403);
         uniqueUsername($rq['username']);
         $role = $rq['role']; $school = $rq['school_id'];
-        if ($role === 'school') {                    // مدرسة جديدة + مديرها (يوافق عليها مدير النظام فقط)
-            q('INSERT INTO schools (name) VALUES (?)', [$rq['school_name']]);
-            $school = (int)db()->lastInsertId(); $role = 'school_admin';
+        $solo = 0;
+        if ($role === 'school' || $role === 'solo') {   // مدرسة جديدة أو معلم مستقل (حلقته مدرسة قائمة بذاتها) — يوافق عليها مدير النظام فقط
+            q('INSERT INTO schools (name) VALUES (?)', [$rq['school_name'] ?: ('حلقة ' . $rq['name'])]);
+            $school = (int)db()->lastInsertId(); $solo = $role === 'solo' ? 1 : 0; $role = 'school_admin';
         }
-        q('INSERT INTO users (username,name,role,school_id,pass_hash,must_change) VALUES (?,?,?,?,?,0)', [$rq['username'], $rq['name'], $role, $school, $rq['pass_hash']]);
+        q('INSERT INTO users (username,name,role,school_id,pass_hash,solo,must_change) VALUES (?,?,?,?,?,?,0)', [$rq['username'], $rq['name'], $role, $school, $rq['pass_hash'], $solo]);
         $uid = (int)db()->lastInsertId();
         if ($role === 'parent') {
             $sids = array_map('intval', is_array(body()['student_ids'] ?? null) ? body()['student_ids'] : []);
@@ -590,7 +586,7 @@ try {
     case 'request_reject': {
         $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
         $rq = q('SELECT role,school_id FROM signup_requests WHERE id=?', [$id])->fetch();
-        if ($rq && $me['role'] === 'school_admin' && ($rq['role'] === 'school' || !mgrOwns($me, $rq['school_id']))) fail('غير مصرح', 403);
+        if ($rq && $me['role'] === 'school_admin' && (in_array($rq['role'], ['school', 'solo'], true) || !mgrOwns($me, $rq['school_id']))) fail('غير مصرح', 403);
         q('DELETE FROM signup_requests WHERE id=?', [$id]);
         out(['ok' => true]);
     }

@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const GRADES = ['ممتاز', 'جيد جداً', 'جيد', 'مقبول', 'إعادة'];
 const gcls = g => 'g-' + g.replace(' ', '-');
-const ROLE_AR = { admin: 'مدير النظام', school_admin: 'مدير مدرسة', teacher: 'معلم', parent: 'ولي أمر', student: 'طالب' };
+const ROLE_AR = { solo: 'معلم مستقل', admin: 'مدير النظام', school_admin: 'مدير مدرسة', teacher: 'معلم', parent: 'ولي أمر', student: 'طالب' };
 
 /* ---------- الاتصال بالخادم ---------- */
 async function api(route, body, qs = '') {
@@ -28,6 +28,7 @@ const role = () => db.me.role;
 const isAdmin = () => role() === 'admin';                         // مدير النظام (المنصة)
 const isMgr = () => role() === 'admin' || role() === 'school_admin'; // مدير النظام أو مدير مدرسة
 const staff = () => role() === 'admin' || role() === 'school_admin' || role() === 'teacher';
+const roleLabel = u => u.solo ? 'معلم مستقل' : ROLE_AR[u.role];
 const brand = () => db.school || { name: 'متابعة التحفيظ', logo: '' };
 const student = id => db.students.find(s => s.id === +id);
 const userById = id => db.users.find(u => u.id === +id);
@@ -147,6 +148,7 @@ const betaNote = () => PLATFORM_STATUS ? `<div class="betanote">ℹ️ ${esc(PLA
 function renderLogin() {
   $('#app').innerHTML = `
   <div class="auth">
+    <div class="verse top">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
     <div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>سجّل دخولك لمتابعة الحفظ والمراجعة</p>${betaPill()}</div>
     <div class="card">
       <h3>👋 تسجيل الدخول</h3>
@@ -161,30 +163,30 @@ function renderLogin() {
       </form>
     </div>
     ${betaNote()}
-    <div class="verse">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
   </div>`;
 }
 function renderSignup() {
   const d = st.signupDone;
   $('#app').innerHTML = `
-  <div class="auth"><div class="brand">${logoImg()}<h1>طلب تسجيل جديد</h1><p>سيُراجع طلبك ويُفعَّل بعد موافقة الإدارة</p>${betaPill()}</div>
+  <div class="auth"><div class="brand">${logoImg()}<h1>تسجيل جديد</h1><p>سيُراجع طلبك ويُفعَّل بعد الموافقة</p>${betaPill()}</div>
     <div class="card">${d ? `<div class="empty"><span class="ico">✅</span><b>تم إرسال طلبك</b><br>ستراجعه الإدارة، وبعد الموافقة تدخل برقم جوالك وكلمة المرور التي اخترتها.</div><button class="btn block" data-act="to-login">العودة لتسجيل الدخول</button>` : `
     <form id="signupform" class="gap">
-      <div><label class="f">نوع الحساب</label><select name="role" id="su_role"><option value="parent">ولي أمر</option><option value="teacher">معلم</option><option value="school">تسجيل مدرسة جديدة (مدير مدرسة)</option></select></div>
+      <div><label class="f">نوع التسجيل</label><select name="role" id="su_role"><option value="solo">🧑‍🏫 معلم مستقل (حلقتي الخاصة)</option><option value="school">🏫 مدرسة / مقرأة (لها مدير ومعلمون)</option></select></div>
       <div><label class="f">الاسم الكامل</label><input name="name" required></div>
       <div><label class="f">رقم الجوال (اسم الدخول)</label><input name="username" required inputmode="tel" autocapitalize="off" placeholder="05xxxxxxxx"></div>
-      <div id="su_sname" style="display:none"><label class="f">اسم المدرسة / الحلقة</label><input name="sname" maxlength="120" placeholder="مثال: مدرسة الإمام الشاطبي"></div>
-      <div id="su_school"><label class="f">المدرسة / الحلقة</label><select name="school" required><option value="">— اختر —</option>${st.pubSchools.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
-      <div id="su_kids"><label class="f">اسم الابن / الأبناء في الحلقة</label><textarea name="children" maxlength="300" placeholder="مثال: محمد، عبدالله"></textarea></div>
+      <div id="su_sname"><label class="f" id="su_snl">اسم الحلقة <span class="hint">(اختياري)</span></label><input name="sname" maxlength="120" placeholder="مثال: حلقة الشيخ ..."></div>
       <div><label class="f">كلمة المرور (٦ أحرف على الأقل)</label><input name="pw" type="password" minlength="6" required autocomplete="new-password"></div>
       <div><label class="f">تأكيد كلمة المرور</label><input name="pw2" type="password" minlength="6" required autocomplete="new-password"></div>
       <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button class="btn block gold">إرسال الطلب</button><button type="button" class="btn light block" data-act="to-login">رجوع</button>
-    </form>`}</div>${betaNote()}</div>`;
+    </form>`}</div>
+    <div class="betanote">المعلمون والطلاب وأولياء الأمور لا يسجّلون بأنفسهم: يضيفهم مدير المدرسة أو المعلم المستقل، ثم يدخلون ببيانات يرسلها لهم.</div>
+    ${betaNote()}</div>`;
 }
 function suToggle(r) {
-  const on = (id, show, req) => { const el = $('#' + id); if (el) { el.style.display = show ? '' : 'none'; el.querySelectorAll('input,select').forEach(i => { if ('required' in i) i.required = show && req; }); } };
-  on('su_kids', r === 'parent', false); on('su_school', r !== 'school', true); on('su_sname', r === 'school', true);
+  const sn = $('#su_sname input'), lb = $('#su_snl');
+  if (sn) sn.required = r === 'school';
+  if (lb) lb.innerHTML = r === 'school' ? 'اسم المدرسة / المقرأة' : 'اسم الحلقة <span class="hint">(اختياري)</span>';
 }
 function renderForce() {
   $('#app').innerHTML = `
@@ -220,7 +222,7 @@ function shell(body) {
   const d = new Date(), [t, sub] = TITLES[st.view]();
   $('#app').innerHTML = `
   <header class="hdr">
-    <div class="hdr-row">${logoImg()}<div class="grow"><h1>${esc(brand().name)}</h1><small>${esc(db.me.name)} • ${ROLE_AR[role()]}</small></div>
+    <div class="hdr-row">${logoImg()}<div class="grow"><h1>${esc(brand().name)}</h1><small>${esc(db.me.name)} • ${roleLabel(db.me)}</small></div>
       <div style="text-align:end;font-size:12.5px;line-height:1.4"><b>${fmtDay(d)}</b><br>${fmtG(d)}<br>${fmtH(d)}</div></div>
     <div class="pagetitle">${t}${sub ? `<small>${sub}</small>` : ''}</div>
   </header>
@@ -365,7 +367,7 @@ function viewStudents() {
   }).join('')}</div>` : `<div class="card">${empty('👥', db.students.length ? 'لا توجد نتائج' : 'لا يوجد طلاب بعد')}</div>`}`;
 }
 function teacherOptions(school, sel) {
-  const ts = db.users.filter(u => u.role === 'teacher' && (!school || u.school_id === +school));
+  const ts = db.users.filter(u => (u.role === 'teacher' || (u.role === 'school_admin' && u.solo)) && (!school || u.school_id === +school));
   return `<option value="">— بدون معلم —</option>` + ts.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
 }
 function studentForm(s) {
@@ -376,7 +378,7 @@ function studentForm(s) {
   <form id="stform" class="gap" data-id="${s ? s.id : ''}">
     <div><label class="f">اسم الطالب</label><input name="name" required value="${esc(s?.name)}"></div>
     ${isAdmin() ? `<div><label class="f">المدرسة</label><select name="school" id="st_school">${db.schools.map(x => `<option value="${x.id}" ${x.id === sch ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="school" id="st_school" value="${sch}">`}
-    <div><label class="f">المعلم المسؤول</label><select name="teacher" id="st_teacher">${teacherOptions(sch, s?.teacher_id)}</select></div>
+    <div><label class="f">المعلم المسؤول</label><select name="teacher" id="st_teacher">${teacherOptions(sch, s ? s.teacher_id : (db.me.solo ? db.me.id : null))}</select></div>
     <div><label class="f">البرنامج</label><select name="program" id="st_program"><option value="hifz" ${(s?.program || 'hifz') === 'hifz' ? 'selected' : ''}>📖 حفظ ومراجعة</option>${qiraatAny() || s?.program === 'qiraat' ? `<option value="qiraat" ${s?.program === 'qiraat' ? 'selected' : ''}>📚 قراءات (للحافظين فقط)</option>` : ''}</select></div>
     <div style="border:1.5px solid var(--line);border-radius:14px;padding:12px;background:#fff">
       <label class="row" style="gap:8px"><input type="checkbox" name="hafiz" id="st_hafiz" style="width:auto;flex:none" ${s?.hafiz ? 'checked' : ''}> <b>أتمّ حفظ المصحف كاملاً مسبقاً</b></label>
@@ -519,11 +521,11 @@ function viewThread() {
 function viewManage() {
   const rq = ['requests', `الطلبات${db.requests.length ? ' (' + db.requests.length + ')' : ''}`];
   const T = isAdmin() ? [rq, ['schools', 'المدارس'], ['school_admin', 'مدراء المدارس'], ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['admin', 'مدراء النظام']]
-    : [rq, ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['myschool', 'مدرستي']];
+    : db.me.solo ? [['parent', 'أولياء الأمور'], ['myschool', 'حلقتي']] : [rq, ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['myschool', 'مدرستي']];
   if (!T.some(x => x[0] === st.mt)) st.mt = T[0][0];
   let list;
   if (st.mt === 'requests') {
-    list = db.requests.length ? db.requests.map(r => `<div class="item" data-act="view-request" data-id="${r.id}"><div class="avatar">${{ parent: '👪', teacher: '👨‍🏫', school: '🏫' }[r.role]}</div>
+    list = db.requests.length ? db.requests.map(r => `<div class="item" data-act="view-request" data-id="${r.id}"><div class="avatar">${{ parent: '👪', teacher: '👨‍🏫', school: '🏫', solo: '🧑‍🏫' }[r.role]}</div>
       <div class="t"><b>${esc(r.name)}</b><small>${r.role === 'school' ? 'تسجيل مدرسة: ' + esc(r.school_name) : ROLE_AR[r.role]} • ${esc(r.username)}${r.children ? ' • الأبناء: ' + esc(r.children) : ''}</small></div><div class="side"><small>${fmtT(r.at)}</small></div></div>`).join('')
       : empty('📭', 'لا توجد طلبات تسجيل جديدة');
   } else if (st.mt === 'myschool') {
@@ -537,7 +539,7 @@ function viewManage() {
     const us = db.users.filter(u => u.role === st.mt);
     list = us.length ? us.map(u => {
       const kids = u.role === 'parent' ? db.students.filter(s => s.parents.includes(u.id)).map(s => s.name) : [];
-      const sub = u.role === 'school_admin' ? schoolName(u.school_id) : u.role === 'teacher' ? `${schoolName(u.school_id)} • ${db.students.filter(s => s.teacher_id === u.id).length} طالب` : u.role === 'parent' ? (kids.length ? 'الأبناء: ' + kids.join('، ') : 'غير مرتبط بطالب') : '';
+      const sub = u.role === 'school_admin' ? schoolName(u.school_id) + (u.solo ? ' • معلم مستقل' : '') : u.role === 'teacher' ? `${schoolName(u.school_id)} • ${db.students.filter(s => s.teacher_id === u.id).length} طالب` : u.role === 'parent' ? (kids.length ? 'الأبناء: ' + kids.join('، ') : 'غير مرتبط بطالب') : '';
       return `<div class="item" data-act="edit-user" data-id="${u.id}"><div class="avatar">${initial(u.name)}</div>
         <div class="t"><b>${esc(u.name)} ${u.active ? '' : '<span class="badge g-إعادة">معطّل</span>'}</b><small>${esc(u.username)}${sub ? ' • ' + esc(sub) : ''}</small></div></div>`;
     }).join('') : empty('👤', 'لا توجد حسابات في هذا القسم');
@@ -552,11 +554,13 @@ function viewManage() {
 function requestModal(r) {
   if (!r) return;
   const kids = r.role === 'parent' ? db.students.filter(x => x.school_id === r.school_id) : [];
-  modal(`<h2>${{ parent: '👪', teacher: '👨‍🏫', school: '🏫' }[r.role]} ${r.role === 'school' ? 'طلب تسجيل مدرسة' : 'طلب تسجيل ' + ROLE_AR[r.role]}</h2>
+  const ic = { parent: '👪', teacher: '👨‍🏫', school: '🏫', solo: '🧑‍🏫' }[r.role], own = r.role === 'school' || r.role === 'solo';
+  modal(`<h2>${ic} طلب تسجيل ${r.role === 'school' ? 'مدرسة' : ROLE_AR[r.role]}</h2>
   <div class="creds"><div><small>الاسم</small><b>${esc(r.name)}</b></div><div><small>رقم الجوال (اسم الدخول)</small><b dir="ltr">${esc(r.username)}</b></div>
-    <div><small>${r.role === 'school' ? 'اسم المدرسة المطلوبة' : 'المدرسة'}</small><b>${esc(r.role === 'school' ? r.school_name : schoolName(r.school_id)) || '—'}</b></div>${r.children ? `<div><small>الأبناء حسب كتابته</small><b>${esc(r.children)}</b></div>` : ''}</div>
+    <div><small>${r.role === 'school' ? 'اسم المدرسة المطلوبة' : own ? 'اسم الحلقة' : 'المدرسة'}</small><b>${esc(own ? (r.school_name || 'حلقة ' + r.name) : schoolName(r.school_id)) || '—'}</b></div>${r.children ? `<div><small>الأبناء حسب كتابته</small><b>${esc(r.children)}</b></div>` : ''}</div>
   ${r.role === 'parent' ? `<label class="f">اربطه بأبنائه (اختر من طلاب المدرسة)</label>${kids.length ? `<div class="checks">${kids.map(x => `<label><input type="checkbox" name="rs" value="${x.id}"> ${esc(x.name)}</label>`).join('')}</div>` : '<p class="hint">لا يوجد طلاب بعد — يمكنك الموافقة وربطه لاحقاً من نموذج الطالب.</p>'}`
-    : r.role === 'school' ? '<p class="hint">عند الموافقة تُنشأ المدرسة ويصبح صاحب الطلب مديرها، يدير معلميها وطلابها وأولياء أمورها.</p>'
+    : r.role === 'school' ? '<p class="hint">عند الموافقة تُنشأ المدرسة ويصبح صاحب الطلب مديرها، يدير معلميها وطلابها وأولياء أمرها.</p>'
+    : r.role === 'solo' ? '<p class="hint">عند الموافقة تُنشأ له حلقة مستقلة (مدرسة قائمة بذاتها) يديرها بنفسه معلماً ومديراً، ويضيف طلابه وأولياء أمرهم.</p>'
     : '<p class="hint">سيُفعَّل المعلم في مدرسته، ثم أسند إليه الطلاب من نموذج الطالب.</p>'}
   <div class="gap" style="margin-top:12px"><button class="btn block" data-act="req-approve" data-id="${r.id}">✅ موافقة وتفعيل الحساب</button>
   <button class="btn red block" data-act="req-reject" data-id="${r.id}">✖ رفض</button><button class="btn light block" data-act="close">إغلاق</button></div>`);
@@ -633,7 +637,7 @@ function render() {
   const fa = document.activeElement && document.activeElement.id;
   if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>جارٍ التحميل...</p></div></div>`; return; }
   if (st.view === 'verify') return renderVerify();
-  if (!db.me) { if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'parent'); return; } return renderLogin(); }
+  if (!db.me) { if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
   const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
   if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
@@ -707,7 +711,7 @@ const acts = {
   'open-thread': id => go('messages', { thread: +id }),
   'close-thread': () => { st.thread = null; st.draft = ''; render(); },
   logout,
-  signup: async () => { const r = await api('public_schools'); st.pubSchools = r.schools; st.tk = r.tk; st.signupDone = false; st.view = 'signup'; render(); },
+  signup: async () => { const r = await api('signup_token'); st.tk = r.tk; st.signupDone = false; st.view = 'signup'; render(); },
   'to-login': () => { st.view = 'home'; st.signupDone = false; render(); },
   'view-request': id => requestModal(db.requests.find(r => r.id === +id)),
   'req-approve': async id => {
@@ -777,7 +781,7 @@ document.addEventListener('submit', run(async e => {
   if (f.id === 'signupform') {
     if (f.pw.value !== f.pw2.value) return toast('كلمتا المرور غير متطابقتين');
     await api('signup_request', { role: f.role.value, name: f.name.value, username: f.username.value, password: f.pw.value,
-      school_id: f.role.value === 'school' ? 0 : +f.school.value, school_name: f.sname ? f.sname.value : '', children: f.children ? f.children.value : '', website: f.website.value, tk: st.tk });
+      school_name: f.sname.value, website: f.website.value, tk: st.tk });
     st.signupDone = true; render(); return;
   }
   if (f.id === 'certform') {
