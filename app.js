@@ -135,11 +135,19 @@ const empty = (ico, txt) => `<div class="empty"><span class="ico">${ico}</span>$
 const waNum = p => { const d = String(p || '').replace(/\D/g, ''); return /^05\d{8}$/.test(d) ? '966' + d.slice(1) : d; };
 const appUrl = () => location.origin + location.pathname.replace(/index\.html$/, '');
 
+/* ---------- حالة المنصة (تظهر في صفحتي الدخول والتسجيل؛ اجعلها null لإخفائها) ---------- */
+const PLATFORM_STATUS = {
+  badge: '🧪 نسخة تجريبية • مجانية حالياً',
+  note: 'المنصة في مرحلة التجربة والتطوير، والاستخدام مجاني خلال هذه الفترة. قد تُضاف ميزات جديدة وقد يتغير بعضها، وملاحظاتك تساعدنا على تحسينها.'
+};
+const betaPill = () => PLATFORM_STATUS ? `<span class="beta">${esc(PLATFORM_STATUS.badge)}</span>` : '';
+const betaNote = () => PLATFORM_STATUS ? `<div class="betanote">ℹ️ ${esc(PLATFORM_STATUS.note)}</div>` : '';
+
 /* ---------- الدخول ---------- */
 function renderLogin() {
   $('#app').innerHTML = `
   <div class="auth">
-    <div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>سجّل دخولك لمتابعة الحفظ والمراجعة</p></div>
+    <div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>سجّل دخولك لمتابعة الحفظ والمراجعة</p>${betaPill()}</div>
     <div class="card">
       <h3>👋 تسجيل الدخول</h3>
       <form id="login" class="gap">
@@ -152,13 +160,14 @@ function renderLogin() {
         <p class="hint" style="text-align:center;margin:0">الحساب الجديد يُفعَّل بعد موافقة إدارة المدرسة.</p>
       </form>
     </div>
+    ${betaNote()}
     <div class="verse">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
   </div>`;
 }
 function renderSignup() {
   const d = st.signupDone;
   $('#app').innerHTML = `
-  <div class="auth"><div class="brand">${logoImg()}<h1>طلب تسجيل جديد</h1><p>سيُراجع طلبك ويُفعَّل بعد موافقة الإدارة</p></div>
+  <div class="auth"><div class="brand">${logoImg()}<h1>طلب تسجيل جديد</h1><p>سيُراجع طلبك ويُفعَّل بعد موافقة الإدارة</p>${betaPill()}</div>
     <div class="card">${d ? `<div class="empty"><span class="ico">✅</span><b>تم إرسال طلبك</b><br>ستراجعه الإدارة، وبعد الموافقة تدخل برقم جوالك وكلمة المرور التي اخترتها.</div><button class="btn block" data-act="to-login">العودة لتسجيل الدخول</button>` : `
     <form id="signupform" class="gap">
       <div><label class="f">نوع الحساب</label><select name="role" id="su_role"><option value="parent">ولي أمر</option><option value="teacher">معلم</option><option value="school">تسجيل مدرسة جديدة (مدير مدرسة)</option></select></div>
@@ -171,7 +180,7 @@ function renderSignup() {
       <div><label class="f">تأكيد كلمة المرور</label><input name="pw2" type="password" minlength="6" required autocomplete="new-password"></div>
       <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button class="btn block gold">إرسال الطلب</button><button type="button" class="btn light block" data-act="to-login">رجوع</button>
-    </form>`}</div></div>`;
+    </form>`}</div>${betaNote()}</div>`;
 }
 function suToggle(r) {
   const on = (id, show, req) => { const el = $('#' + id); if (el) { el.style.display = show ? '' : 'none'; el.querySelectorAll('input,select').forEach(i => { if ('required' in i) i.required = show && req; }); } };
