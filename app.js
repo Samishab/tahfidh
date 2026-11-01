@@ -164,7 +164,7 @@ async function logout() { try { await api('logout', {}); } catch { } db = blank(
 const TITLES = {
   home: () => staff() ? ['الرئيسية', ''] : [role() === 'parent' ? 'أبنائي' : 'متابعتي', ''],
   add: () => ['تسجيل تسميع', 'حفظ جديد أو مراجعة'], students: () => ['الطلاب', ''], student: () => ['ملف الطالب', ''],
-  stats: () => ['الإحصائيات', 'أسبوعية وشهرية'], report: () => ['التقرير الشهري', 'قابل للطباعة PDF'], monthly: () => ['الكشف الشهري', 'إحصائيات الحلقة'], cert: () => ['الشهادة', 'قابلة للطباعة'], statement: () => ['كشف التسميع', 'للفترة المختارة'], messages: () => ['الرسائل', 'ملاحظات واستفسارات'],
+  stats: () => ['الإحصائيات', 'أسبوعية وشهرية'], report: () => ['التقرير الشهري', 'قابل للطباعة PDF'], settings: () => ['الإعدادات', 'القراءات'], monthly: () => ['الكشف الشهري', 'إحصائيات الحلقة'], cert: () => ['الشهادة', 'قابلة للطباعة'], statement: () => ['كشف التسميع', 'للفترة المختارة'], messages: () => ['الرسائل', 'ملاحظات واستفسارات'],
   manage: () => ['الإدارة', 'المدارس والحسابات'], account: () => ['حسابي', '']
 };
 function tabsHtml() {
@@ -174,7 +174,7 @@ function tabsHtml() {
   if (staff()) return `
     ${t('home', '🏠', 'الرئيسية', ['home', 'monthly', 'stats'])}${t('students', '👥', 'الطلاب', ['students', 'student', 'report', 'cert', 'statement'])}
     <button class="fab" data-act="nav" data-id="add"><span>＋</span>تسميع</button>
-    ${t('messages', '💬', 'الرسائل', ['messages'], n)}${t(isMgr() ? 'manage' : 'account', '⚙️', isMgr() ? 'الإدارة' : 'حسابي', ['manage', 'account'], isMgr() ? db.requests.length : 0)}`;
+    ${t('messages', '💬', 'الرسائل', ['messages'], n)}${t(isMgr() ? 'manage' : 'account', '⚙️', isMgr() ? 'الإدارة' : 'حسابي', ['manage', 'account', 'settings'], isMgr() ? db.requests.length : 0)}`;
   return `${t('home', '🏠', role() === 'parent' ? 'أبنائي' : 'متابعتي', ['home', 'student', 'report', 'cert', 'statement'])}${t('stats', '📊', 'إحصائيات', ['stats'])}
     ${t('messages', '💬', 'الرسائل', ['messages'], n)}${t('account', '👤', 'حسابي', ['account'])}`;
 }
@@ -187,7 +187,7 @@ function shell(body) {
       <div style="text-align:end;font-size:12.5px;line-height:1.4"><b>${fmtDay(d)}</b><br>${fmtG(d)}<br>${fmtH(d)}</div></div>
     <div class="pagetitle">${t}${sub ? `<small>${sub}</small>` : ''}</div>
   </header>
-  <main>${db.me.must_change ? '<div class="card" style="border:1.5px solid var(--gold);background:var(--gold2)"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">يُنصح بتغييرها من تبويب «حسابي».</div></div>' : ''}${body}</main>
+  <main>${db.me.must_change ? '<div class="card" data-act="nav" data-id="account" style="border:1.5px solid var(--gold);background:var(--gold2);cursor:pointer"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">اضغط هنا لتغييرها متى شئت — لا يمنعك شيء من العمل.</div></div>' : ''}${body}</main>
   <nav class="tabbar">${tabsHtml()}</nav>`;
 }
 
@@ -544,10 +544,19 @@ function showCreds(name, username, password, phone) {
 }
 
 /* ---------- حسابي ---------- */
+function viewSettings() {
+  const back = isMgr() ? 'manage' : 'account';
+  return `
+  <div class="card"><div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="nav" data-id="${back}">→ رجوع</button><span></span></div>
+    <h3>📚 القراءات</h3>
+    <label class="row" style="gap:10px;align-items:flex-start"><input type="checkbox" id="qiraatchk" style="width:auto;flex:none;margin-top:5px" ${db.me.qiraat ? 'checked' : ''}>
+      <span>أُقرئ بالقراءات العشر (الصغرى) بالإضافة إلى حفص<br><small class="hint">الأساس حفص عن عاصم. عند التفعيل يظهر اختيار الرواية في التسميع وفي بيانات الطالب. الإلغاء لا يحذف ما سُجّل.</small></span></label>
+    <p class="hint" style="margin:10px 0 0">هذا الخيار مستقل تماماً عن كلمة المرور، ولا يتطلب أي إجراء آخر.</p></div>`;
+}
 function accountView() {
   return `
   <div class="card"><h3>👤 ${esc(db.me.name)}</h3><p class="hint" style="margin:0">${ROLE_AR[role()]} • ${esc(db.me.username)}</p></div>
-  ${staff() ? `<div class="card"><h3>📚 القراءات</h3><label class="row" style="gap:10px;align-items:flex-start"><input type="checkbox" id="qiraatchk" style="width:auto;flex:none;margin-top:5px" ${db.me.qiraat ? 'checked' : ''}><span>أُقرئ بالقراءات العشر (الصغرى) بالإضافة إلى حفص<br><small class="hint">الأساس حفص عن عاصم. عند التفعيل يظهر اختيار الرواية في التسميع وفي بيانات الطالب.</small></span></label></div>` : ''}
+  ${staff() ? `<div class="card" data-act="nav" data-id="settings" style="cursor:pointer"><h3>📚 إعدادات القراءات <span class="more">فتح ›</span></h3><p class="hint" style="margin:0">الإقراء بالقراءات العشر بالإضافة إلى حفص — في صفحة مستقلة.</p></div>` : ''}
   <div class="card"><h3>🔑 تغيير كلمة المرور</h3>
     <form id="pwform" class="gap"><input name="old" type="password" placeholder="كلمة المرور الحالية" required autocomplete="current-password">
       <input name="new" type="password" placeholder="كلمة المرور الجديدة (٦ أحرف على الأقل)" minlength="6" required autocomplete="new-password"><button class="btn block">تغيير</button></form></div>
@@ -571,9 +580,8 @@ function render() {
   if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>جارٍ التحميل...</p></div></div>`; return; }
   if (st.view === 'verify') return renderVerify();
   if (!db.me) { if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'parent'); return; } return renderLogin(); }
-  if (db.me.must_change && !st.skipForce) return renderForce();
-  const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
-  if (!staff() && ['add', 'students', 'manage', 'monthly'].includes(st.view)) st.view = 'home';
+  const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
+  if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
   shell(views[st.view]());
   if (st.view === 'add') updateInfo();
@@ -698,7 +706,7 @@ document.addEventListener('submit', run(async e => {
   }
   if (f.id === 'pwform') {
     await api('change_password', { old: f.old.value, new: f.new.value });
-    if (f.dataset.force) { db.me.must_change = false; render(); } else f.reset();
+    f.reset(); db.me.must_change = false; render();
     toast('تم تغيير كلمة المرور ✔'); return;
   }
   if (f.id === 'msgform') {
@@ -753,7 +761,7 @@ document.addEventListener('change', run(async e => {
 
 /* ---------- تنبيه الرسائل الجديدة ---------- */
 setInterval(async () => {
-  if (!db.me || db.me.must_change || document.hidden) return;
+  if (!db.me || document.hidden) return;
   try {
     const since = db.messages.reduce((m, x) => Math.max(m, x.id), 0);
     const r = await api('poll', null, '&since=' + since);
