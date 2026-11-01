@@ -146,21 +146,13 @@ function stmtCsv() {
     .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), typeAr(x), Q.name(x.surah), x.from, Q.name(rEnd(x)), x.to, ayahs(x), Q.juz(x.surah, x.from, x.to, rEnd(x)).join('-'), x.grade || '', (x.enrollmentId && enrById(x.enrollmentId) ? enrById(x.enrollmentId).label : ''), x.note || ''])));
 }
 function stmtTables(recs) {
-  const secs = [];
-  const hifz = recs.filter(x => x.type === 'hifz'), rev = recs.filter(x => x.type === 'review');
-  if (hifz.length) secs.push({ ic: '📖', title: 'الحفظ', cls: 'h', rows: hifz });
-  if (rev.length) secs.push({ ic: '🔁', title: 'المراجعة', cls: 'r', rows: rev });
-  [...new Set(recs.filter(x => x.type === 'qiraa').map(x => x.enrollmentId))].forEach(id => {
-    const e = enrById(id); secs.push({ ic: '📚', title: 'قراءة: ' + (e ? e.label : 'ختمة'), cls: 'q', rows: recs.filter(x => x.type === 'qiraa' && x.enrollmentId === id), qiraa: true });
-  });
-  return secs.map(sec => {
-    const n = sec.rows.reduce((t0, x) => t0 + ayahs(x), 0), jz = sec.rows.some(x => x.grade) ? '<th>التقدير</th>' : '';
-    return `<div class="rp-box rp-tbl"><h3>${sec.ic} ${esc(sec.title)} <span>${sec.rows.length} تسميع • ${n} آية</span></h3>
-      <table><tr><th>#</th><th>التاريخ</th><th style="text-align:start">السورة والآيات</th><th>الآيات</th><th>الجزء</th>${jz}<th style="text-align:start">ملاحظة</th></tr>
-      ${sec.rows.map((x, i) => { const d = parse(x.date); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td>
-        <td style="text-align:start"><b>${rngName(x)}</b> ${x.from}–${x.to}</td><td>${ayahs(x)}</td>
-        <td>${Q.juz(x.surah, x.from, x.to, rEnd(x)).join('–')}</td>${jz ? `<td>${x.grade || '—'}</td>` : ''}<td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table></div>`;
-  }).join('');
+  const jz = recs.some(x => x.grade) ? '<th>التقدير</th>' : '';
+  const sm = [['hifz', 'حفظ'], ['review', 'مراجعة'], ['qiraa', 'قراءة']].map(([k, l]) => { const x = recs.filter(r => r.type === k); return x.length ? `${l} ${x.length} (${x.reduce((n, r) => n + ayahs(r), 0)} آية)` : ''; }).filter(Boolean).join(' • ');
+  return `<div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>${recs.length} تسميع${sm ? ' — ' + sm : ''}</span></h3>
+    <table><tr><th>#</th><th>التاريخ</th><th>النوع</th><th style="text-align:start">السورة والآيات</th><th>الآيات</th><th>الجزء</th>${jz}<th style="text-align:start">ملاحظة</th></tr>
+    ${recs.map((x, i) => { const d = parse(x.date), en = x.enrollmentId && enrById(x.enrollmentId); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td><td><em class="${typeCls(x)}">${typeAr(x)}</em></td>
+      <td style="text-align:start"><b>${rngName(x)}</b> ${x.from}–${x.to}${en ? ' <small>• ' + esc(en.label) + '</small>' : ''}</td><td>${ayahs(x)}</td>
+      <td>${Q.juz(x.surah, x.from, x.to, rEnd(x)).join('–')}</td>${jz ? `<td>${x.grade || '—'}</td>` : ''}<td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table></div>`;
 }
 function statementSheet(s) {
   const { r, recs } = stmtData(s), g = agg(recs), t = tObj(s);
