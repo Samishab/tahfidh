@@ -285,30 +285,27 @@ function viewKids() {
 function viewAdd() {
   const f = st.form || (st.form = newForm(''));
   if (!db.students.length) return `<div class="card">${empty('👥', 'لا يوجد طلاب لتسجيل التسميع')}</div>`;
+  const so = student(f.sid), ac = so ? activeEnr(so.id) : [], s2 = +(f.surahTo || f.surah);
+  const progSel = so && (ac.length || so.program === 'qiraat')
+    ? `<select data-f="enr" title="البرنامج">${so.program !== 'qiraat' ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>` : '';
   return `
-  <div class="card gap">
-    ${st.fixed && f.sid && student(f.sid) ? `<div class="row" style="margin-bottom:-4px"><button type="button" class="btn light sm auto" data-act="nav" data-id="students">→ الطلاب</button><span></span></div>
-      <div class="item" style="cursor:default;border:0;padding:0"><div class="avatar">${initial(student(f.sid).name)}</div>
-        <div class="t"><b style="font-size:19px">${esc(student(f.sid).name)}</b><small>${esc(curLine(student(f.sid)))}</small></div>
-        <button type="button" class="btn light sm auto" data-act="open-student" data-id="${f.sid}">📂 ملفه</button></div>`
-    : `<div><label class="f">الطالب</label>
-      <select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(s => `<option value="${s.id}" ${+f.sid === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}
-    ${(() => { const so = student(f.sid), ac = so ? activeEnr(so.id) : [];
-      return so && (ac.length || so.program === 'qiraat') ? `<div><label class="f">البرنامج</label><select data-f="enr">${so.program !== 'qiraat' ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>${!ac.length ? '<div class="hint">لا يوجد برنامج قراءة جارٍ لهذا الطالب — أضفه من ملفه.</div>' : ''}</div>` : ''; })()}
-    ${f.enr ? '<div class="info" style="text-align:start">📚 متابعة قراءة ختمة — لا حفظ ولا مراجعة</div>' : `<div class="seg gold"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>`}
-    <div><label class="f">تاريخ التسميع</label><input type="date" data-f="date" value="${f.date}" max="${today()}"><div class="hint" id="dayname"></div></div>
-    <div><label class="f">من سورة</label>
-      <select data-f="surah">${SURAHS.map((s, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${s[0]} (${s[1]} آية)</option>`).join('')}</select></div>
-    <div><label class="f">من آية</label><input type="number" inputmode="numeric" data-f="from" value="${f.from}" min="1" max="${Q.count(+f.surah)}"></div>
-    <div><label class="f">إلى سورة <span class="hint">(نفس السورة إن لم يتجاوزها)</span></label>
-      <select data-f="surahTo">${SURAHS.map((s, i) => i + 1 >= +f.surah ? `<option value="${i + 1}" ${+(f.surahTo || f.surah) === i + 1 ? 'selected' : ''}>${i + 1} - ${s[0]} (${s[1]} آية)</option>` : '').join('')}</select></div>
-    <div><label class="f">إلى آية</label><input type="number" inputmode="numeric" data-f="to" value="${f.to}" min="1" max="${Q.count(+(f.surahTo || f.surah))}"></div>
-    <div class="chips">${[5, 10, 15, 20].map(n => `<button type="button" class="chip" data-act="len" data-id="${n}">${n} آيات</button>`).join('')}<button type="button" class="chip" data-act="len" data-id="end">إلى نهاية السورة</button></div>
-    ${f.hint ? `<div class="hint" id="poshint">💡 ${esc(f.hint)}</div>` : ''}
-    <div class="info" id="info"></div>
-    <div><label class="f">التقدير <span class="hint">(اختياري)</span></label>
-      <div class="chips" id="grades">${GRADES.map(g => `<button type="button" class="chip ${f.grade === g ? 'on' : ''}" data-act="grade" data-id="${g}">${g}</button>`).join('')}</div></div>
-    <div><label class="f">ملاحظة <span class="hint">(اختياري - تظهر لولي الأمر)</span></label><textarea data-f="note" maxlength="500" placeholder="أخطاء، توصية، واجب...">${esc(f.note)}</textarea></div>
+  <div class="card tight">
+    ${st.fixed && f.sid && so ? `<div class="cmp"><button type="button" class="btn light sm" data-act="nav" data-id="students" title="الطلاب">→</button>
+        <div class="avatar" style="width:38px;height:38px;font-size:16px;border-radius:12px">${initial(so.name)}</div>
+        <div style="flex:1;min-width:0"><b style="font-size:17px">${esc(so.name)}</b><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curLine(so))}</div></div>
+        <button type="button" class="btn light sm" data-act="open-student" data-id="${f.sid}" title="ملف الطالب">📂</button></div>`
+      : `<select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(x => `<option value="${x.id}" ${+f.sid === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}
+    <div class="cmp">${progSel}<input type="date" data-f="date" value="${f.date}" max="${today()}" style="${progSel ? 'width:150px;flex:none' : 'flex:1'}"><span id="dayname" hidden></span></div>
+    ${!f.enr ? `<div class="seg gold sm"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>` : ''}
+    <div class="cmp"><b>من</b><select data-f="surah">${SURAHS.map((x, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>`).join('')}</select>
+      <input type="number" inputmode="numeric" data-f="from" value="${f.from}" min="1" max="${Q.count(+f.surah)}" placeholder="آية 1–${Q.count(+f.surah)}" title="رقم الآية"></div>
+    <div class="cmp"><b>إلى</b><select data-f="surahTo">${SURAHS.map((x, i) => i + 1 >= +f.surah ? `<option value="${i + 1}" ${s2 === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>` : '').join('')}</select>
+      <input type="number" inputmode="numeric" data-f="to" value="${f.to}" min="1" max="${Q.count(s2)}" placeholder="آية 1–${Q.count(s2)}" title="رقم الآية"></div>
+    <div class="hscroll">${[5, 10, 15, 20].map(n => `<button type="button" class="chip" data-act="len" data-id="${n}">${n} آيات</button>`).join('')}<button type="button" class="chip" data-act="len" data-id="end">إلى نهاية السورة</button></div>
+    ${f.hint ? `<div class="hint" id="poshint" style="margin:-2px 0">💡 ${esc(f.hint)}</div>` : ''}
+    <div class="info sm" id="info"></div>
+    <div class="hscroll" id="grades"><span class="hint" style="align-self:center">التقدير</span>${GRADES.map(g => `<button type="button" class="chip ${f.grade === g ? 'on' : ''}" data-act="grade" data-id="${g}">${g}</button>`).join('')}</div>
+    <input data-f="note" maxlength="500" value="${esc(f.note)}" placeholder="ملاحظة تظهر لولي الأمر (اختياري)">
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
   </div>

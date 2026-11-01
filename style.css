@@ -252,3 +252,16 @@ td:first-child,th:first-child{text-align:start}
 .jamgrid{max-height:240px;overflow:auto;border:1.5px solid var(--line);border-radius:13px;padding:6px 10px;background:#fff}
 .jamgrid label{display:inline-flex;align-items:center;gap:4px;margin-inline-end:12px;font-size:14px}
 .jamgrid input{width:auto}
+
+/* ===== نموذج التسميع المضغوط (جوال) ===== */
+.tight{display:grid;gap:8px;padding:12px}
+.cmp{display:flex;gap:8px;align-items:center}
+.cmp>b{flex:none;width:30px;color:var(--g1);font-size:14px}
+.cmp select{flex:1;min-width:0}
+.cmp input[type=number]{width:104px;flex:none;text-align:center}
+.tight input,.tight select{padding:10px 11px}
+.hscroll{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding-bottom:2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.hscroll::-webkit-scrollbar{display:none}
+.hscroll .chip{flex:none;padding:5px 11px;font-size:13.5px}
+.info.sm{padding:8px 10px;font-size:13.5px;line-height:1.5}
+.seg.sm button{padding:7px 4px;font-size:14px}
