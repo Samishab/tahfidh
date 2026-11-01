@@ -79,3 +79,17 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   KEY idx_ip (ip, at),
   KEY idx_user (username, at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS signup_requests (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  role ENUM('parent','teacher') NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  username VARCHAR(60) NOT NULL,
+  pass_hash VARCHAR(255) NOT NULL,
+  school_id INT UNSIGNED NULL,
+  children VARCHAR(300) NULL,
+  ip VARCHAR(45) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_req_user (username),
+  KEY idx_req_ip (ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

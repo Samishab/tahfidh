@@ -162,3 +162,57 @@ td:first-child,th:first-child{text-align:start}
 .bub .m small{display:block;font-size:11px;color:var(--mut)}
 #msgin{min-height:48px}
 .rt td{font-size:13px;vertical-align:top}.rt small{color:var(--mut)}
+
+/* ===== التقرير الشهري (A4) ===== */
+.rptwrap{overflow:hidden;margin-bottom:14px;border-radius:10px;box-shadow:var(--sh)}
+.rpt{width:794px;height:1123px;background:#fff;transform-origin:top right;position:relative;overflow:hidden;padding:0 26px;color:var(--ink);font-size:13px;line-height:1.5;display:flex;flex-direction:column;gap:8px}
+.rp-hd{margin:0 -26px;height:106px;background:linear-gradient(120deg,#084733,#14956b 70%,#1aa57a);color:#fff;display:flex;align-items:center;gap:16px;padding:0 30px;position:relative;overflow:hidden;flex:none}
+.rp-pat{position:absolute;inset:0;opacity:.12;background:radial-gradient(circle at 20% 30%,#fff 0 2px,transparent 3px) 0 0/34px 34px,radial-gradient(circle at 70% 70%,#fff 0 2px,transparent 3px) 17px 17px/34px 34px}
+.rp-logo{width:68px;height:68px;border-radius:18px;background:#fff;object-fit:cover;position:relative;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.rp-hd-t{position:relative;flex:1}.rp-hd-t small{font-size:13px;opacity:.9}.rp-hd-t h1{font-size:26px;font-weight:800;line-height:1.3}
+.rp-month{position:relative;text-align:center;background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.4);border-radius:16px;padding:8px 16px}
+.rp-month b{display:block;font-size:20px;color:#ffe08a}.rp-month small{font-size:10.5px;opacity:.95}
+.rp-st{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#f4fbf7,#fff8e3);border:1.5px solid #dcebe2;border-radius:18px;padding:10px 16px;flex:none}
+.rp-av{width:58px;height:58px;border-radius:18px;background:linear-gradient(135deg,#14956b,#0b5d45);color:#fff;display:grid;place-items:center;font-size:26px;font-weight:800;flex:none}
+.rp-st-t{flex:1;min-width:0}.rp-st-t h2{font-size:22px;font-weight:800;color:#0b5d45;line-height:1.3}.rp-st-t p{margin:0;color:#6b7d75;font-size:12.5px}
+.rp-last{color:#1d2b26!important;margin-top:2px!important}.rp-last b{font-family:'Amiri',serif;font-size:15px;color:#0b5d45}
+.rp-ring{width:92px;height:92px;flex:none}
+.rp-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;flex:none}
+.rp-k{border-radius:15px;padding:8px 4px;text-align:center;background:#fff;border:1.5px solid color-mix(in srgb,var(--c) 35%,#fff);border-top:5px solid var(--c);position:relative}
+.rp-k i{font-style:normal;font-size:15px;display:block}.rp-k b{display:block;font-size:24px;font-weight:800;line-height:1.15;color:var(--c)}
+.rp-k b small{font-size:12px;color:#6b7d75;font-weight:500}.rp-k span{font-size:11.5px;color:#6b7d75}
+.rp-row{display:grid;grid-template-columns:2fr 1fr;gap:10px;flex:none}
+.rp-box{border:1.5px solid #e6ece8;border-radius:16px;padding:9px 13px;background:#fff;min-width:0}
+.rp-box h3{font-size:13.5px;margin:0 0 4px;color:#0b5d45;display:flex;align-items:center;gap:6px}
+.rp-box h3 span{margin-inline-start:auto;font-size:10.5px;font-weight:500;color:#6b7d75;display:flex;align-items:center;gap:4px}
+.rp-box h3 span i,.rp-cap i{display:inline-block;width:9px;height:9px;border-radius:3px}
+.rp-chart{height:124px}.rp-donut{width:100px;height:100px;margin:0 auto}
+.rp-cap{margin:4px 0 0;font-size:11.5px;color:#6b7d75;text-align:center}
+.rp-juz{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-top:6px}
+.rp-juz div{height:32px;border:1.5px solid;border-radius:9px;display:grid;place-items:center;font-size:12px}
+.rp-gb{display:grid;grid-template-columns:54px 1fr 18px;gap:6px;align-items:center;font-size:11.5px;margin:5px 0}
+.rp-gb div{height:9px;background:#eef3f0;border-radius:5px;overflow:hidden}.rp-gb i{display:block;height:100%;border-radius:5px}.rp-gb b{text-align:center}
+.rp-tbl table{width:100%;border-collapse:collapse;font-size:12px}
+.rp-tbl th{background:#eef7f2;color:#0b5d45;font-size:11px;padding:4px;text-align:center}
+.rp-tbl td{padding:2.5px 6px;border-bottom:1px solid #edf1ee;text-align:center}.rp-tbl td:nth-child(3){text-align:start}
+.rp-tbl em{font-style:normal;font-size:10.5px;font-weight:700;border-radius:8px;padding:1px 9px}
+.rp-tbl em.h{background:#e3f4ec;color:#0b5d45}.rp-tbl em.r{background:#fff1cf;color:#8a6200}
+.rp-notes p{margin:2px 0;font-size:12px}
+.rp-ft{display:flex;justify-content:space-between;align-items:flex-end;margin-top:auto;padding-top:6px;font-size:12px;color:#6b7d75;flex:none}
+.rp-ft>div{text-align:center;min-width:160px}.rp-ft>div span{display:block;border-bottom:1.5px solid #9aa9a2;height:22px;margin-bottom:3px}
+.rp-ft .rp-verse{font-family:'Amiri',serif;font-size:17px;color:#0b5d45;align-self:center;min-width:0}
+.rp-foot{text-align:center;font-size:10px;color:#9aa9a2;padding-bottom:8px;flex:none}
+
+@media print{
+  @page{size:A4;margin:0}
+  html,body{background:#fff!important;padding:0!important;margin:0!important;max-width:none!important;box-shadow:none!important}
+  .noprint,#toast,#modal{display:none!important}
+  main{margin:0!important;padding:0!important}
+  .rptwrap{height:auto!important;overflow:visible!important;box-shadow:none!important;border-radius:0!important;margin:0!important}
+  .rpt{transform:none!important;width:210mm!important;height:296mm!important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+
+/* ===== طلب التسجيل ===== */
+.hp{position:absolute;left:-9999px;opacity:0;height:0;overflow:hidden}
+.linkbtn{background:none;border:0;color:var(--g1);font-weight:700;cursor:pointer;text-decoration:underline;padding:6px}

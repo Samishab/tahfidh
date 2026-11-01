@@ -120,6 +120,9 @@ function bootstrap(array $u): array {
         'students' => $stOut, 'records' => $recs, 'messages' => $msgs, 'reads' => (object)$reads, 'users' => []];
     if ($u['role'] === 'admin') {
         $res['users'] = array_map('userOut', q('SELECT * FROM users ORDER BY role, name')->fetchAll());
+        $res['requests'] = array_map(fn($r) => ['id' => (int)$r['id'], 'role' => $r['role'], 'name' => $r['name'], 'username' => $r['username'],
+            'school_id' => $r['school_id'] ? (int)$r['school_id'] : null, 'children' => $r['children'] ?? '', 'at' => iso($r['created_at'])],
+            q('SELECT * FROM signup_requests ORDER BY id')->fetchAll());
     } elseif ($u['role'] === 'parent' || $u['role'] === 'student') {
         // أسماء المعلمين لعرضها فقط
         $res['users'] = array_map(fn($t) => ['id' => (int)$t['id'], 'name' => $t['name'], 'role' => 'teacher'],
@@ -165,6 +168,10 @@ try {
         if ($n >= 8) fail('محاولات كثيرة، حاول بعد 15 دقيقة', 429);
         $u = q('SELECT * FROM users WHERE username=?', [$name])->fetch();
         $ok = password_verify($pw, $u['pass_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
+        if (!$u) {
+            $rq = q('SELECT pass_hash FROM signup_requests WHERE username=?', [$name])->fetch();
+            if ($rq && password_verify($pw, $rq['pass_hash'])) fail('طلب تسجيلك قيد المراجعة من الإدارة، سيُفعَّل حسابك بعد الموافقة', 403);
+        }
         if (!$u || !$ok || !$u['active']) { q('INSERT INTO login_attempts (ip,username) VALUES (?,?)', [ip(), $name]); fail('اسم المستخدم أو كلمة المرور غير صحيحة', 401); }
         session_regenerate_id(true);
         $_SESSION['uid'] = (int)$u['id'];
@@ -229,7 +236,8 @@ try {
     }
     case 'poll': {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
-        out(['messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll())]);
+        out(['messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
+            'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn() : 0]);
     }
 
     /* ----- الإدارة (للمدير فقط) ----- */
@@ -333,6 +341,50 @@ try {
         q('DELETE FROM students WHERE id=?', [$id]);
         out(['ok' => true]);
     }
+
+    /* ----- طلبات التسجيل ----- */
+    case 'public_schools':
+        out(['tk' => time(), 'schools' => array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name']], q('SELECT id,name FROM schools ORDER BY name')->fetchAll())]);
+
+    case 'signup_request': {
+        $b = body();
+        if (!empty($b['website'])) out(['ok' => true]);                       // فخ للروبوتات (حقل مخفي)
+        $tk = (int)($b['tk'] ?? 0);
+        if ($tk <= 0 || time() - $tk < 3 || time() - $tk > 172800) fail('أعد المحاولة');
+        if ((int)q('SELECT COUNT(*) FROM signup_requests WHERE ip=? AND created_at > NOW() - INTERVAL 1 HOUR', [ip()])->fetchColumn() >= 3)
+            fail('وصلتنا طلباتك، انتظر موافقة الإدارة', 429);
+        if ((int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn() >= 300) fail('الطلبات ممتلئة حالياً، تواصل مع الإدارة', 429);
+        $role = $b['role'] ?? ''; if (!in_array($role, ['parent', 'teacher'], true)) fail('نوع الحساب غير صحيح');
+        $name = str('name', 120); $un = normUser(str('username', 60)); $pw = (string)($b['password'] ?? '');
+        $school = (int)($b['school_id'] ?? 0) ?: null; $children = str('children', 300);
+        if ($name === '') fail('الاسم مطلوب');
+        if (mb_strlen($pw) < 6) fail('كلمة المرور 6 أحرف على الأقل');
+        uniqueUsername($un);
+        if (q('SELECT 1 FROM signup_requests WHERE username=?', [$un])->fetchColumn()) fail('يوجد طلب بهذا الرقم قيد المراجعة');
+        if ($school && !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('مدرسة غير صحيحة');
+        if ($role === 'teacher' && !$school) fail('اختر المدرسة');
+        if ($role === 'parent' && $children === '') fail('اكتب اسم ابنك أو أبنائك');
+        q('INSERT INTO signup_requests (role,name,username,pass_hash,school_id,children,ip) VALUES (?,?,?,?,?,?,?)',
+            [$role, $name, $un, password_hash($pw, PASSWORD_DEFAULT), $school, $children, ip()]);
+        out(['ok' => true]);
+    }
+    case 'request_approve': {
+        need('admin'); $id = (int)(body()['id'] ?? 0);
+        $rq = q('SELECT * FROM signup_requests WHERE id=?', [$id])->fetch();
+        if (!$rq) fail('الطلب غير موجود', 404);
+        uniqueUsername($rq['username']);
+        $sids = array_map('intval', is_array(body()['student_ids'] ?? null) ? body()['student_ids'] : []);
+        q('INSERT INTO users (username,name,role,school_id,pass_hash,must_change) VALUES (?,?,?,?,?,0)',
+            [$rq['username'], $rq['name'], $rq['role'], $rq['role'] === 'teacher' ? $rq['school_id'] : null, $rq['pass_hash']]);
+        $uid = (int)db()->lastInsertId();
+        if ($rq['role'] === 'parent')
+            foreach ($sids as $sid) if (q('SELECT 1 FROM students WHERE id=?', [$sid])->fetchColumn()) q('INSERT IGNORE INTO parent_student (parent_id,student_id) VALUES (?,?)', [$uid, $sid]);
+        q('DELETE FROM signup_requests WHERE id=?', [$id]);
+        out(['id' => $uid]);
+    }
+    case 'request_reject':
+        need('admin'); q('DELETE FROM signup_requests WHERE id=?', [(int)(body()['id'] ?? 0)]);
+        out(['ok' => true]);
 
     default: fail('مسار غير معروف', 404);
     }
