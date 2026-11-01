@@ -847,18 +847,21 @@ document.addEventListener('change', run(async e => {
 }));
 
 /* ---------- تنبيه الرسائل الجديدة ---------- */
-setInterval(async () => {
+async function pollOnce() {
   if (!db.me || document.hidden) return;
   try {
     const since = db.messages.reduce((m, x) => Math.max(m, x.id), 0);
     const r = await api('poll', null, '&since=' + since);
+    if (r.role !== db.me.role || !!r.solo !== !!db.me.solo) { await refresh(); st.mt = 'requests'; render(); toast('تم تحديث صلاحياتك'); return; }
     if (isMgr() && r.pending !== db.requests.length) { await refresh(); updateTabbar(); if (st.view === 'manage') render(); else toast('📝 طلب تسجيل جديد'); return; }
     if (!r.messages.length) return;
     db.messages.push(...r.messages);
     const fresh = r.messages.some(m => m.senderId !== db.me.id);
     if (st.view === 'messages') render(); else { updateTabbar(); if (fresh) toast('📩 وصلتك رسالة جديدة'); }
   } catch { }
-}, 20000);
+}
+setInterval(pollOnce, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollOnce(); });   // عند العودة للتطبيق
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
 (async () => {

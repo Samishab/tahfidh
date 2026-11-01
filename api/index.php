@@ -300,7 +300,7 @@ try {
     }
     case 'poll': {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
-        out(['messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
+        out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
             'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn()
                 : ($u['role'] === 'school_admin' ? (int)q("SELECT COUNT(*) FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher')", [$u['school_id']])->fetchColumn() : 0)]);
     }
