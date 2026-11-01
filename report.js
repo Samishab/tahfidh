@@ -93,7 +93,7 @@ function reportSheet(s, off) {
   <div class="rp-box rp-tbl"><h3>📋 سجل التسميع ${recs.length ? `<span>${recs.length} تسميع</span>` : ''}</h3>
     ${recs.length ? `<table><tr><th>اليوم</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th></tr>
       ${shown.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em></td>
-        <td><b>${Q.name(r.surah)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.enrollmentId && enrById(r.enrollmentId) ? ' • ' + esc(enrById(r.enrollmentId).label) : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
+        <td><b>${rngName(r)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.enrollmentId && enrById(r.enrollmentId) ? ' • ' + esc(enrById(r.enrollmentId).label) : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
       ${more > 0 ? `<p class="rp-cap">+ ${more} تسميعات أخرى سابقة في هذا الشهر</p>` : ''}` : '<p class="rp-cap" style="padding:14px 0">لا يوجد تسميع مسجل في هذا الشهر</p>'}</div>
 
   ${notes.length ? `<div class="rp-box rp-notes"><h3>📝 ملاحظات المعلم</h3>${notes.map(r => { const d = parse(r.date); return `<p>• <b>${d.getDate()}/${d.getMonth() + 1}</b> — ${esc(r.note)}</p>`; }).join('')}</div>` : ''}

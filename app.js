@@ -50,7 +50,9 @@ const today = () => ymd(new Date());
 /* ---------- الحالة ---------- */
 const st = { view: 'home', ready: false, sid: null, mode: 'week', off: 0, q: '', form: null, thread: null, draft: '', mt: 'requests', tmpLogo: null, ro: 0, pubSchools: [], tk: 0, signupDone: false, mo: -1, mschool: '', cid: null, verify: null };
 
-const ayahs = r => r.to - r.from + 1;
+const rEnd = r => r.surahTo || r.surah;                                    // سورة نهاية التسميع
+const ayahs = r => Q.abs(rEnd(r), r.to) - Q.abs(r.surah, r.from) + 1;      // عدد الآيات ولو امتد عدة سور
+const rngName = r => rEnd(r) !== r.surah ? `${Q.name(r.surah)} ← ${Q.name(rEnd(r))}` : Q.name(r.surah);
 const inRange = (a, b) => db.records.filter(r => r.date >= a && r.date <= b);
 function agg(recs) {
   const o = { h: 0, r: 0, q: 0, n: recs.length, days: new Set(), students: new Set() };
@@ -65,24 +67,36 @@ function lastOf(sid, type, enr) {
     .sort((a, b) => (a.date + String(a.id).padStart(9, '0')).localeCompare(b.date + String(b.id).padStart(9, '0'))).pop();
 }
 function nextPos(sid, type, enr) {
-  const l = lastOf(sid, type, enr), qr = type === 'qiraa';
-  if (!l) return { surah: qr ? 1 : (type === 'hifz' ? 78 : 1), from: 1, to: '', hint: qr ? 'بداية الختمة من سورة الفاتحة' : '' };
-  if (l.to < Q.count(l.surah)) return { surah: l.surah, from: l.to + 1, to: '', hint: `آخر موضع: ${Q.name(l.surah)} آية ${l.to} — يبدأ من الآية ${l.to + 1}` };
-  if (l.surah === 114) return { surah: 114, from: 1, to: '', hint: qr ? 'ما شاء الله! أتمّ الختمة 🎉' : 'ما شاء الله! أتمّ المصحف 🎉' };
-  return { surah: l.surah + 1, from: 1, to: '', hint: `أنهى سورة ${Q.name(l.surah)} — اقتراح: ${Q.name(l.surah + 1)} من أولها` };
+  const l = lastOf(sid, type, enr), qr = type === 'qiraa', P = o => ({ ...o, surahTo: o.surah });
+  if (!l) return P({ surah: qr ? 1 : (type === 'hifz' ? 78 : 1), from: 1, to: '', hint: qr ? 'بداية الختمة من سورة الفاتحة' : '' });
+  const ls = rEnd(l);
+  if (l.to < Q.count(ls)) return P({ surah: ls, from: l.to + 1, to: '', hint: `آخر موضع: ${Q.name(ls)} آية ${l.to} — يبدأ من الآية ${l.to + 1}` });
+  if (ls === 114) return P({ surah: 114, from: 1, to: '', hint: qr ? 'ما شاء الله! أتمّ الختمة 🎉' : 'ما شاء الله! أتمّ المصحف 🎉' });
+  return P({ surah: ls + 1, from: 1, to: '', hint: `أنهى سورة ${Q.name(ls)} — اقتراح: ${Q.name(ls + 1)} من أولها` });
 }
-const newForm = (sid, type = 'hifz', enr = '') => {
-  const s = student(sid), act = s ? activeEnr(s.id) : [];
-  if (!enr && s && s.program === 'qiraat' && act.length) enr = act[0].id;
+// البرنامج الحالي للطالب: آخر ما سُمِّع له، وإلا ختمته الجارية إن كان حافظاً أو في برنامج القراءات
+function currentEnr(sid) {
+  const act = activeEnr(sid), s = student(sid);
+  const last = db.records.filter(r => r.studentId === +sid).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0')))[0];
+  if (last) return last.type === 'qiraa' ? (act.some(e => e.id === last.enrollmentId) ? last.enrollmentId : (act[0] ? act[0].id : '')) : (s && s.program === 'qiraat' && act[0] ? act[0].id : '');
+  return s && act.length && (s.program === 'qiraat' || s.hafiz) ? act[act.length - 1].id : '';
+}
+function curLine(s) {
+  const e = currentEnr(s.id), l = lastOf(s.id, e ? 'qiraa' : 'hifz', e), en = e ? enrById(e) : null;
+  return `${en ? '📚 ' + en.label : (s.program === 'qiraat' ? '📚 قراءات' : '📖 حفظ ومراجعة')}${l ? ' • وصل: ' + Q.name(rEnd(l)) + ' آية ' + l.to : ''}`;
+}
+const newForm = (sid, type = 'hifz', enr = null) => {
+  const s = student(sid);
+  if (enr === null) enr = s ? currentEnr(s.id) : '';
   if (enr) type = 'qiraa';
-  return { id: null, sid: sid || '', type, enr: enr || '', date: today(), grade: '', note: '', ...nextPos(sid, type, enr) };
+  return { id: null, sid: sid || '', type, enr: enr ? String(enr) : '', date: today(), grade: '', note: '', ...nextPos(sid, type, enr) };
 };
 // خريطة الحفظ: enr فارغ = حفظ المصحف، وإلا ختمة القراءة المحددة. raw = تجاهل علامة «حافظ» اليدوية
 function memorized(sid, enr, raw) {
   const m = new Uint8Array(Q.TOTAL), s = student(sid);
   if (!enr && !raw && s && s.hafiz) { m.fill(1); return m; }
   db.records.filter(r => r.studentId === +sid && (enr ? r.type === 'qiraa' && r.enrollmentId === +enr : r.type === 'hifz' && !r.enrollmentId)).forEach(r => {
-    for (let i = Q.abs(r.surah, r.from); i <= Q.abs(r.surah, r.to); i++) m[i - 1] = 1;
+    for (let i = Q.abs(r.surah, r.from); i <= Q.abs(rEnd(r), r.to); i++) m[i - 1] = 1;
   });
   return m;
 }
@@ -92,7 +106,8 @@ const qiraatOn = () => staff() && !!db.me.qiraat;
 const qiraatAny = () => !!db.me.qiraat || db.users.some(u => u.role === 'teacher' && u.qiraat);
 const rwOptions = sel => QURRA.map(([, qn, rs]) => `<optgroup label="${qn}">${rs.map(([k, n]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${n} عن ${qn}</option>`).join('')}</optgroup>`).join('');
 const enrTag = r => r.enrollmentId && enrById(r.enrollmentId) ? `<span class="badge b-rw">${esc(enrById(r.enrollmentId).label)}</span>` : '';
-const recText = r => `سورة ${Q.name(r.surah)} (${r.from === r.to ? 'آية ' + r.from : 'من آية ' + r.from + ' إلى ' + r.to})`;
+const recText = r => rEnd(r) !== r.surah ? `من سورة ${Q.name(r.surah)} آية ${r.from} إلى سورة ${Q.name(rEnd(r))} آية ${r.to}`
+  : `سورة ${Q.name(r.surah)} (${r.from === r.to ? 'آية ' + r.from : 'من آية ' + r.from + ' إلى ' + r.to})`;
 
 /* ---------- الرسائل ---------- */
 const msgsOf = sid => db.messages.filter(m => m.studentId === +sid);
@@ -212,7 +227,7 @@ function recCard(r, opts = {}) {
       ${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : ''}${enrTag(r)}
       ${opts.noName || !s ? '' : `<span class="who">${esc(s.name)}</span>`}</div>
     <div class="sn">${recText(r)}</div>
-    <div class="meta">${ayahs(r)} آية • ${Q.juzText(r.surah, r.from, r.to)} • ${fmtDay(d)} ${fmtS(d)}</div>
+    <div class="meta">${ayahs(r)} آية • ${Q.juzText(r.surah, r.from, r.to, rEnd(r))} • ${fmtDay(d)} ${fmtS(d)}</div>
     ${r.note ? `<div class="meta">📝 ${esc(r.note)}</div>` : ''}
     ${staff() ? `<div class="acts"><button class="btn light sm" data-act="edit-rec" data-id="${r.id}">تعديل</button><button class="btn red sm" data-act="del-rec" data-id="${r.id}">حذف</button></div>` : ''}
   </div>`;
@@ -272,18 +287,22 @@ function viewAdd() {
   if (!db.students.length) return `<div class="card">${empty('👥', 'لا يوجد طلاب لتسجيل التسميع')}</div>`;
   return `
   <div class="card gap">
-    <div><label class="f">الطالب</label>
-      <select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(s => `<option value="${s.id}" ${+f.sid === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
+    ${st.fixed && f.sid && student(f.sid) ? `<div class="row" style="margin-bottom:-4px"><button type="button" class="btn light sm auto" data-act="nav" data-id="students">→ الطلاب</button><span></span></div>
+      <div class="item" style="cursor:default;border:0;padding:0"><div class="avatar">${initial(student(f.sid).name)}</div>
+        <div class="t"><b style="font-size:19px">${esc(student(f.sid).name)}</b><small>${esc(curLine(student(f.sid)))}</small></div>
+        <button type="button" class="btn light sm auto" data-act="open-student" data-id="${f.sid}">📂 ملفه</button></div>`
+    : `<div><label class="f">الطالب</label>
+      <select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(s => `<option value="${s.id}" ${+f.sid === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}
     ${(() => { const so = student(f.sid), ac = so ? activeEnr(so.id) : [];
       return so && (ac.length || so.program === 'qiraat') ? `<div><label class="f">البرنامج</label><select data-f="enr">${so.program !== 'qiraat' ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>${!ac.length ? '<div class="hint">لا يوجد برنامج قراءة جارٍ لهذا الطالب — أضفه من ملفه.</div>' : ''}</div>` : ''; })()}
     ${f.enr ? '<div class="info" style="text-align:start">📚 متابعة قراءة ختمة — لا حفظ ولا مراجعة</div>' : `<div class="seg gold"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>`}
     <div><label class="f">تاريخ التسميع</label><input type="date" data-f="date" value="${f.date}" max="${today()}"><div class="hint" id="dayname"></div></div>
-    <div><label class="f">السورة</label>
+    <div><label class="f">من سورة</label>
       <select data-f="surah">${SURAHS.map((s, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${s[0]} (${s[1]} آية)</option>`).join('')}</select></div>
-    <div class="row">
-      <div><label class="f">من آية</label><input type="number" inputmode="numeric" data-f="from" value="${f.from}" min="1" max="${Q.count(+f.surah)}"></div>
-      <div><label class="f">إلى آية</label><input type="number" inputmode="numeric" data-f="to" value="${f.to}" min="1" max="${Q.count(+f.surah)}"></div>
-    </div>
+    <div><label class="f">من آية</label><input type="number" inputmode="numeric" data-f="from" value="${f.from}" min="1" max="${Q.count(+f.surah)}"></div>
+    <div><label class="f">إلى سورة <span class="hint">(نفس السورة إن لم يتجاوزها)</span></label>
+      <select data-f="surahTo">${SURAHS.map((s, i) => i + 1 >= +f.surah ? `<option value="${i + 1}" ${+(f.surahTo || f.surah) === i + 1 ? 'selected' : ''}>${i + 1} - ${s[0]} (${s[1]} آية)</option>` : '').join('')}</select></div>
+    <div><label class="f">إلى آية</label><input type="number" inputmode="numeric" data-f="to" value="${f.to}" min="1" max="${Q.count(+(f.surahTo || f.surah))}"></div>
     <div class="chips">${[5, 10, 15, 20].map(n => `<button type="button" class="chip" data-act="len" data-id="${n}">${n} آيات</button>`).join('')}<button type="button" class="chip" data-act="len" data-id="end">إلى نهاية السورة</button></div>
     ${f.hint ? `<div class="hint" id="poshint">💡 ${esc(f.hint)}</div>` : ''}
     <div class="info" id="info"></div>
@@ -292,15 +311,19 @@ function viewAdd() {
     <div><label class="f">ملاحظة <span class="hint">(اختياري - تظهر لولي الأمر)</span></label><textarea data-f="note" maxlength="500" placeholder="أخطاء، توصية، واجب...">${esc(f.note)}</textarea></div>
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
-  </div>`;
+  </div>
+  ${st.fixed && f.sid && !f.id ? (() => { const rc = db.records.filter(r => r.studentId === +f.sid).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0'))).slice(0, 3);
+    return rc.length ? `<div class="card"><h3>🕘 آخر تسميعاته</h3><div class="list">${rc.map(r => recCard(r, { noName: true })).join('')}</div></div>` : ''; })() : ''}`;
 }
 function checkForm() {
-  const f = st.form, s = +f.surah, a = +f.from, b = +f.to, max = Q.count(s);
-  if (!f.from || !f.to) return { ok: false, msg: `أدخل رقم الآية — سورة ${Q.name(s)} فيها ${max} آية` };
+  const f = st.form, s = +f.surah, s2 = +(f.surahTo || f.surah), a = +f.from, b = +f.to;
+  if (!f.from || !f.to) return { ok: false, msg: `أدخل رقم الآية — سورة ${Q.name(s)} فيها ${Q.count(s)} آية` };
   if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b < 1) return { ok: false, msg: 'أرقام الآيات غير صحيحة' };
-  if (b > max || a > max) return { ok: false, msg: `سورة ${Q.name(s)} عدد آياتها ${max} فقط` };
-  if (a > b) return { ok: false, msg: 'آية البداية أكبر من آية النهاية' };
-  return { ok: true, msg: `${recText({ surah: s, from: a, to: b })} • ${b - a + 1} آية • ${Q.juzText(s, a, b)}` };
+  if (a > Q.count(s)) return { ok: false, msg: `سورة ${Q.name(s)} عدد آياتها ${Q.count(s)} فقط` };
+  if (b > Q.count(s2)) return { ok: false, msg: `سورة ${Q.name(s2)} عدد آياتها ${Q.count(s2)} فقط` };
+  if (s2 < s || (s2 === s && a > b)) return { ok: false, msg: 'نهاية التسميع قبل بدايته' };
+  const r = { surah: s, from: a, surahTo: s2, to: b };
+  return { ok: true, msg: `${recText(r)} • ${ayahs(r)} آية • ${Q.juzText(s, a, b, s2)}` };
 }
 function updateInfo() {
   const i = $('#info'); if (!i) return;
@@ -312,7 +335,7 @@ async function saveRec() {
   if (!f.sid) return toast('اختر الطالب أولاً');
   if (!f.date) return toast('اختر التاريخ');
   if (!c.ok) return toast(c.msg);
-  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, to: +f.to, grade: f.grade, note: f.note.trim() });
+  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, surahTo: +(f.surahTo || f.surah), to: +f.to, grade: f.grade, note: f.note.trim() });
   db.records = db.records.filter(x => x.id !== r.record.id); db.records.push(r.record);
   let done = false;
   if (r.enrollment) { const old = enrById(r.enrollment.id); done = r.enrollment.status === 'completed' && (!old || old.status !== 'completed'); db.enrollments = db.enrollments.filter(e => e.id !== r.enrollment.id); db.enrollments.push(r.enrollment); }
@@ -325,12 +348,14 @@ async function saveRec() {
 function viewStudents() {
   const list = db.students.filter(s => s.name.includes(st.q) || (s.group || '').includes(st.q));
   return `
+  <p class="hint" style="margin:0 4px 8px">اضغط الطالب للتسميع على برنامجه الحالي، و📂 لملفه وسيرته.</p>
   <div class="card"><div class="row"><input id="q" placeholder="🔍 بحث عن طالب..." value="${esc(st.q)}">${isMgr() ? '<button class="btn auto" data-act="add-student">＋ طالب</button>' : ''}</div></div>
   ${list.length ? `<div class="list">${list.map(s => {
     const { total, w } = progressCard(s), t = userById(s.teacher_id), un = unread(s.id);
-    return `<div class="item" data-act="open-student" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
-      <div class="t"><b>${esc(s.name)}</b><small>${s.group ? esc(s.group) + ' • ' : ''}محفوظ ${total} آية${isMgr() && t ? ' • ' + esc(t.name) : ''}</small></div>
-      <div class="side"><b>${w.h + w.r + w.q}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`;
+    return `<div class="item" data-act="quick" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
+      <div class="t"><b>${esc(s.name)}</b><small>${esc(curLine(s))}${s.group ? ' • ' + esc(s.group) : ''}${isMgr() && t ? ' • ' + esc(t.name) : ''}</small></div>
+      <div class="side"><b>${w.h + w.r + w.q}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div>
+      <button class="btn light sm auto" data-act="open-student" data-id="${s.id}" title="ملف الطالب" style="margin-inline-start:6px">📂</button></div>`;
   }).join('')}</div>` : `<div class="card">${empty('👥', db.students.length ? 'لا توجد نتائج' : 'لا يوجد طلاب بعد')}</div>`}`;
 }
 function teacherOptions(school, sel) {
@@ -366,7 +391,8 @@ function studentForm(s) {
 function viewStudent() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
   const act = activeEnr(s.id), tabs = (s.program !== 'qiraat' ? [{ k: '', l: '📖 حفظ ومراجعة' }] : []).concat(act.map(e => ({ k: String(e.id), l: '📚 ' + e.label })));
-  const cur = tabs.some(x => x.k === String(st.pe || '')) ? String(st.pe || '') : (tabs[0] ? tabs[0].k : '');
+  const want = st.pe == null ? String(currentEnr(s.id)) : String(st.pe);
+  const cur = tabs.some(x => x.k === want) ? want : (tabs[0] ? tabs[0].k : '');
   const m = memorized(s.id, cur), total = m.reduce((x, y) => x + y, 0), { w } = progressCard(s);
   const recs = db.records.filter(r => r.studentId === s.id).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0')));
   const juz = Array.from({ length: 30 }, (_, i) => {
@@ -414,8 +440,8 @@ function recTable(recs) {
   return `<div class="seg" style="margin-bottom:10px">${seg}</div>` + (rows.length ? `<div class="tw"><table class="rt"><tr><th>التاريخ</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th><th></th></tr>
     ${rows.map(r => { const d = parse(r.date); return `<tr><td><b>${fmtDay(d)}</b><br><small>${fmtS(d)}</small></td>
       <td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}">${typeAr(r)}</span></td>
-      <td style="text-align:start"><b>${Q.name(r.surah)}</b><br><small>${r.from}–${r.to} (${ayahs(r)} آية)</small>${enrTag(r) ? '<br>' + enrTag(r) : ''}${r.note ? `<br><small>📝 ${esc(r.note)}</small>` : ''}</td>
-      <td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '—'}</td>
+      <td style="text-align:start"><b>${rngName(r)}</b><br><small>${r.from}–${r.to} (${ayahs(r)} آية)</small>${enrTag(r) ? '<br>' + enrTag(r) : ''}${r.note ? `<br><small>📝 ${esc(r.note)}</small>` : ''}</td>
+      <td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td>${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '—'}</td>
       <td><button class="btn light sm" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم عن هذا التسميع">💬</button></td></tr>`; }).join('')}</table></div>` : empty('📖', 'لا يوجد تسميع مسجل'));
 }
 function weekReport(s) {
@@ -614,22 +640,21 @@ function render() {
 /* ---------- الأحداث ---------- */
 const run = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message || 'حدث خطأ'); } };
 const acts = {
-  nav: id => { if (id === 'add' && (!st.form || st.form.id)) st.form = newForm(''); go(id, { thread: null }); },
+  nav: id => { st.fixed = false; if (id === 'add' && (!st.form || st.form.id)) st.form = newForm(''); go(id, { thread: null }); },
   showpw: () => { const p = $('#pw'); p.type = p.type === 'password' ? 'text' : 'password'; },
   close: closeModal,
   type: id => { st.form.type = id; if (!st.form.id && st.form.sid) Object.assign(st.form, nextPos(st.form.sid, id, '')); render(); },
   grade: id => { st.form.grade = st.form.grade === id ? '' : id; document.querySelectorAll('#grades .chip').forEach(c => c.classList.toggle('on', c.dataset.id === st.form.grade)); },
   len: id => {
     const f = st.form, mx = Q.count(+f.surah); if (!f.from) f.from = 1;
-    f.to = id === 'end' ? mx : Math.min(+f.from + +id - 1, mx);
-    document.querySelector('[data-f=from]').value = f.from; document.querySelector('[data-f=to]').value = f.to; updateInfo();
+    f.surahTo = f.surah; f.to = id === 'end' ? mx : Math.min(+f.from + +id - 1, mx); render();
   },
   'save-rec': saveRec,
   'cancel-edit': () => { st.form = newForm(''); go('home'); },
-  'edit-rec': id => { const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
+  'edit-rec': id => { const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, surahTo: rEnd(r), from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
   'del-rec': async id => { if (!confirm('حذف هذا التسميع؟')) return; await api('record_delete', { id: +id }); db.records = db.records.filter(r => r.id !== +id); render(); toast('تم الحذف'); },
-  quick: id => { st.form = newForm(id); go('add'); },
-  'open-student': id => go('student', { sid: +id }),
+  quick: id => { st.form = newForm(id); st.fixed = true; go('add'); },
+  'open-student': id => { st.fixed = false; go('student', { sid: +id, pe: null }); },
   report: id => {
     const s = student(id), p = db.users.find(u => s.parents.includes(u.id) && u.phone);
     window.open(`https://wa.me/${p ? waNum(p.phone) : ''}?text=${encodeURIComponent(weekReport(s))}`, '_blank');
@@ -715,15 +740,13 @@ document.addEventListener('input', e => {
   if (t.id === 'msgin') { st.draft = t.value; return; }
   if (!t.dataset.f || !st.form) return;
   st.form[t.dataset.f] = t.value;
-  if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
+  if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, surahTo: nf.surahTo, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
   if (t.dataset.f === 'enr') { st.form.type = t.value ? 'qiraa' : 'hifz'; if (!st.form.id) Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value)); render(); return; }
-  if (t.dataset.f === 'surah') {
-    const mx = Q.count(+st.form.surah); st.form.from = 1; st.form.to = ''; st.form.hint = '';
-    const fr = document.querySelector('[data-f=from]'), to = document.querySelector('[data-f=to]');
-    fr.value = 1; to.value = ''; fr.max = to.max = mx; const h = $('#poshint'); if (h) h.remove();
-  } else if ((t.dataset.f === 'from' || t.dataset.f === 'to') && t.value !== '') {
-    const mx = Q.count(+st.form.surah);   // لا يتجاوز آخر آية في السورة
-    if (+t.value > mx) { t.value = mx; st.form[t.dataset.f] = String(mx); toast(`سورة ${Q.name(+st.form.surah)} فيها ${mx} آية فقط`); }
+  if (t.dataset.f === 'surah') { st.form.surahTo = st.form.surah; st.form.from = 1; st.form.to = ''; st.form.hint = ''; render(); return; }
+  if (t.dataset.f === 'surahTo') { st.form.to = ''; st.form.hint = ''; render(); return; }
+  if ((t.dataset.f === 'from' || t.dataset.f === 'to') && t.value !== '') {
+    const sx = t.dataset.f === 'to' ? +(st.form.surahTo || st.form.surah) : +st.form.surah, mx = Q.count(sx);   // لا يتجاوز آخر آية في السورة
+    if (+t.value > mx) { t.value = mx; st.form[t.dataset.f] = String(mx); toast(`سورة ${Q.name(sx)} فيها ${mx} آية فقط`); }
     else if (+t.value < 1) { t.value = 1; st.form[t.dataset.f] = '1'; }
   }
   updateInfo();
@@ -757,12 +780,21 @@ document.addEventListener('submit', run(async e => {
     db.certs.unshift(r.cert); closeModal(); go('cert', { cid: r.cert.id }); toast('تم إصدار الشهادة ✔'); return;
   }
   if (f.id === 'enrform') {
+    if (f.hafnow && f.hafnow.checked) { await api('student_hafiz', { id: +f.dataset.sid, hafiz: true, where: f.hafw.value, note: '' }); Object.assign(student(f.dataset.sid), { hafiz: true, hafizWhere: f.hafw.value }); }
     const kind = f.kind.value; let keys;
     if (kind === 'riwaya') keys = [f.riwaya.value]; else if (kind === 'qiraa') keys = qariRawis(f.qari.value); else keys = [...f.querySelectorAll('[name=jam]:checked')].map(x => x.value);
     if (kind === 'jam' && keys.length < 2) return toast('اختر روايتين على الأقل للجمع');
     const r = await api('enrollment_save', { studentId: +f.dataset.sid, kind, riwayat: keys, label: enrLabel(kind, keys), prior: f.dataset.prior === '1',
       started_at: f.sd ? f.sd.value : null, completed_at: f.cd ? f.cd.value : null, shaykh: f.shaykh ? f.shaykh.value : '', note: f.note.value });
-    db.enrollments.push(r.enrollment); closeModal(); st.pe = r.enrollment.prior ? st.pe : String(r.enrollment.id); render(); toast('تمت الإضافة ✔'); return;
+    db.enrollments.push(r.enrollment); closeModal();
+    if (!r.enrollment.prior && f.cs && f.cs.value && f.ca.value) {          // رصيد سابق: من الفاتحة إلى حيث وصل
+      const cs = +f.cs.value, ca = +f.ca.value;
+      if (ca < 1 || ca > Q.count(cs)) { toast(`سورة ${Q.name(cs)} عدد آياتها ${Q.count(cs)} فقط`); render(); return; }
+      const rr = await api('record_save', { studentId: +f.dataset.sid, date: f.sd.value || today(), type: 'qiraa', enrollmentId: r.enrollment.id, surah: 1, from: 1, surahTo: cs, to: ca, grade: '', note: 'رصيد سابق: ما قُرئ قبل التسجيل في النظام' });
+      db.records.push(rr.record); if (rr.enrollment) Object.assign(r.enrollment, rr.enrollment);
+    }
+    if (r.enrollment.prior) { render(); toast('تمت الإضافة ✔'); return; }
+    st.form = newForm(f.dataset.sid, 'qiraa', r.enrollment.id); st.fixed = true; go('add'); toast('تم تسجيل البرنامج — ابدأ التسميع ✔'); return;
   }
   if (f.id === 'hafform') {
     await api('student_hafiz', { id: +f.dataset.sid, hafiz: f.hafiz.checked, where: f.where.value, note: f.note.value });

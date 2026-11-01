@@ -9,7 +9,7 @@ foreach (array_filter(array_map('trim', explode(';', file_get_contents(__DIR__ .
 // ترقية قواعد قائمة: عمود الرواية + خيار القراءات للمعلم
 foreach ([['records', 'riwaya', "VARCHAR(20) NOT NULL DEFAULT 'hafs'"], ['students', 'riwaya', "VARCHAR(20) NOT NULL DEFAULT 'hafs'"], ['users', 'qiraat', 'TINYINT(1) NOT NULL DEFAULT 0'], ['signup_requests', 'school_name', 'VARCHAR(120) NULL'],
     ['students', 'program', "VARCHAR(10) NOT NULL DEFAULT 'hifz'"], ['students', 'hafiz', 'TINYINT(1) NOT NULL DEFAULT 0'], ['students', 'hafiz_where', 'VARCHAR(160) NULL'], ['students', 'hafiz_note', 'VARCHAR(300) NULL'],
-    ['records', 'enrollment_id', 'INT UNSIGNED NULL'], ['certificates', 'enrollment_id', 'INT UNSIGNED NULL'], ['certificates', 'riwaya_label', "VARCHAR(200) NOT NULL DEFAULT ''"]] as [$t, $c, $def])
+    ['records', 'enrollment_id', 'INT UNSIGNED NULL'], ['records', 'surah_to', 'TINYINT UNSIGNED NULL'], ['certificates', 'enrollment_id', 'INT UNSIGNED NULL'], ['certificates', 'riwaya_label', "VARCHAR(200) NOT NULL DEFAULT ''"]] as [$t, $c, $def])
     if (!$pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='$t' AND COLUMN_NAME='$c'")->fetchColumn())
         $pdo->exec("ALTER TABLE $t ADD COLUMN $c $def");
 // أدوار جديدة: مدير مدرسة / طلب تسجيل مدرسة، وربط أولياء الأمور القدامى بمدارس أبنائهم

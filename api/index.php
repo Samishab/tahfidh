@@ -93,10 +93,10 @@ function memorizedAll(int $sid, ?int $enr = null): bool {
     global $AYAHS;
     $off = [0]; foreach ($AYAHS as $i => $n) $off[] = $off[$i] + $n;
     $m = array_fill(0, 6236, false);
-    $rows = $enr ? q("SELECT surah,ayah_from,ayah_to FROM records WHERE student_id=? AND type='qiraa' AND enrollment_id=?", [$sid, $enr])->fetchAll()
-        : q("SELECT surah,ayah_from,ayah_to FROM records WHERE student_id=? AND type='hifz' AND enrollment_id IS NULL", [$sid])->fetchAll();
+    $rows = $enr ? q("SELECT surah,surah_to,ayah_from,ayah_to FROM records WHERE student_id=? AND type='qiraa' AND enrollment_id=?", [$sid, $enr])->fetchAll()
+        : q("SELECT surah,surah_to,ayah_from,ayah_to FROM records WHERE student_id=? AND type='hifz' AND enrollment_id IS NULL", [$sid])->fetchAll();
     foreach ($rows as $r)
-        for ($i = $off[$r['surah'] - 1] + $r['ayah_from']; $i <= $off[$r['surah'] - 1] + $r['ayah_to']; $i++) $m[$i - 1] = true;
+        for ($i = $off[$r['surah'] - 1] + $r['ayah_from']; $i <= $off[($r['surah_to'] ?: $r['surah']) - 1] + $r['ayah_to']; $i++) $m[$i - 1] = true;
     return !in_array(false, $m, true);
 }
 function enrOut(array $e): array {
@@ -118,7 +118,7 @@ function iso(string $d): string { return date('c', strtotime($d)); }
 /* ---------- تحويل الصفوف ---------- */
 function recOut(array $r): array {
     return ['id' => (int)$r['id'], 'studentId' => (int)$r['student_id'], 'date' => $r['rec_date'], 'type' => $r['type'],
-        'surah' => (int)$r['surah'], 'from' => (int)$r['ayah_from'], 'to' => (int)$r['ayah_to'], 'grade' => $r['grade'],
+        'surah' => (int)$r['surah'], 'from' => (int)$r['ayah_from'], 'surahTo' => !empty($r['surah_to']) ? (int)$r['surah_to'] : (int)$r['surah'], 'to' => (int)$r['ayah_to'], 'grade' => $r['grade'],
         'note' => $r['note'] ?? '', 'by' => $r['by_name'] ?? '', 'riwaya' => $r['riwaya'] ?? 'hafs', 'enrollmentId' => !empty($r['enrollment_id']) ? (int)$r['enrollment_id'] : null];
 }
 function msgOut(array $m): array {
@@ -189,10 +189,13 @@ function validRecord(): array {
     if (!in_array($type, ['hifz', 'review', 'qiraa'], true)) fail('نوع التسميع غير صحيح');
     $s = (int)($b['surah'] ?? 0); $f = (int)($b['from'] ?? 0); $t = (int)($b['to'] ?? 0);
     if ($s < 1 || $s > 114) fail('سورة غير صحيحة');
-    if ($f < 1 || $t < $f || $t > $AYAHS[$s - 1]) fail('أرقام الآيات غير صحيحة (عدد آيات السورة ' . $AYAHS[$s - 1] . ')');
+    $s2 = (int)($b['surahTo'] ?? $s) ?: $s;
+    if ($s2 < $s || $s2 > 114) fail('سورة النهاية غير صحيحة');
+    if ($f < 1 || $f > $AYAHS[$s - 1]) fail('آية البداية غير صحيحة (عدد آيات السورة ' . $AYAHS[$s - 1] . ')');
+    if ($t < 1 || $t > $AYAHS[$s2 - 1] || ($s2 === $s && $t < $f)) fail('آية النهاية غير صحيحة (عدد آيات السورة ' . $AYAHS[$s2 - 1] . ')');
     $g = (string)($b['grade'] ?? '');
     if ($g !== '' && !in_array($g, GRADES, true)) fail('تقدير غير صحيح');
-    return [$d, $type, $s, $f, $t, $g, str('note', 500), (int)($b['enrollmentId'] ?? 0)];
+    return [$d, $type, $s, $f, $t, $g, str('note', 500), (int)($b['enrollmentId'] ?? 0), $s2];
 }
 function uniqueUsername(string $name, int $exceptId = 0): void {
     if (!preg_match('/^[\p{L}\p{N}_.@+-]{3,60}$/u', $name)) fail('اسم المستخدم من 3 إلى 60 حرفاً (حروف وأرقام فقط)');
@@ -245,7 +248,7 @@ try {
     /* ----- التسميع ----- */
     case 'record_save': {
         $u = need('admin', 'school_admin', 'teacher');
-        [$d, $type, $s, $f, $t, $g, $note, $enr] = validRecord();
+        [$d, $type, $s, $f, $t, $g, $note, $enr, $s2] = validRecord();
         $sid = (int)(body()['studentId'] ?? 0); $id = (int)(body()['id'] ?? 0);
         $stu = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
         if (!$stu || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
@@ -264,9 +267,9 @@ try {
             $old = q('SELECT student_id, enrollment_id FROM records WHERE id=?', [$id])->fetch();
             if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
             $oldEnr = (int)$old['enrollment_id'];
-            q('UPDATE records SET student_id=?, rec_date=?, type=?, surah=?, ayah_from=?, ayah_to=?, grade=?, note=?, enrollment_id=? WHERE id=?', [$sid, $d, $type, $s, $f, $t, $g, $note, $enr ?: null, $id]);
+            q('UPDATE records SET student_id=?, rec_date=?, type=?, surah=?, surah_to=?, ayah_from=?, ayah_to=?, grade=?, note=?, enrollment_id=? WHERE id=?', [$sid, $d, $type, $s, $s2 === $s ? null : $s2, $f, $t, $g, $note, $enr ?: null, $id]);
         } else {
-            q('INSERT INTO records (student_id,teacher_id,rec_date,type,surah,ayah_from,ayah_to,grade,note,enrollment_id) VALUES (?,?,?,?,?,?,?,?,?,?)', [$sid, $u['id'], $d, $type, $s, $f, $t, $g, $note, $enr ?: null]);
+            q('INSERT INTO records (student_id,teacher_id,rec_date,type,surah,surah_to,ayah_from,ayah_to,grade,note,enrollment_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [$sid, $u['id'], $d, $type, $s, $s2 === $s ? null : $s2, $f, $t, $g, $note, $enr ?: null]);
             $id = (int)db()->lastInsertId();
         }
         $en = $enr ? syncEnrollment($enr) : null;

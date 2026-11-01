@@ -67,7 +67,7 @@ function monthlyData(off, school) {
 function monthlyCsv() {
   const { m, rows } = monthlyData(st.mo, st.mschool);
   downloadCsv(`كشف-${m.label}`, [['الطالب', 'آيات الحفظ', 'آيات المراجعة', 'آيات القراءة', 'عدد التسميعات', 'أيام التسميع', 'متوسط التقدير', 'آخر موضع حفظ']]
-    .concat(rows.map(r => [r.s.name, r.x.h, r.x.r, r.x.q, r.x.n, r.x.days.size, r.avg, r.last ? `${Q.name(r.last.surah)} ${r.last.to}` : ''])));
+    .concat(rows.map(r => [r.s.name, r.x.h, r.x.r, r.x.q, r.x.n, r.x.days.size, r.avg, r.last ? `${Q.name(rEnd(r.last))} ${r.last.to}` : ''])));
 }
 function monthlySheet(off, school) {
   const { m, studs, g, per, rows, inactive, top } = monthlyData(off, school);
@@ -88,7 +88,7 @@ function monthlySheet(off, school) {
   <div class="rp-box rp-tbl"><h3>📋 كشف الطلاب <span>${studs.length} طالب</span></h3>
     ${rows.length ? `<table><tr><th>#</th><th style="text-align:start">الطالب</th><th>حفظ</th><th>مراجعة</th><th>قراءة</th><th>تسميعات</th><th>أيام</th><th>التقدير</th><th style="text-align:start">آخر موضع حفظ</th></tr>
     ${rows.map((r, i) => `<tr><td>${i + 1}</td><td style="text-align:start"><b>${esc(r.s.name)}</b></td><td>${r.x.h}</td><td>${r.x.r}</td><td>${r.x.q || '—'}</td><td>${r.x.n}</td><td>${r.x.days.size}</td><td>${r.avg}</td>
-      <td style="text-align:start"><small>${r.last ? Q.name(r.last.surah) + ' ' + r.last.to : '—'}</small></td></tr>`).join('')}</table>` : '<p class="rp-cap">لا يوجد طلاب</p>'}</div>
+      <td style="text-align:start"><small>${r.last ? Q.name(rEnd(r.last)) + ' ' + r.last.to : '—'}</small></td></tr>`).join('')}</table>` : '<p class="rp-cap">لا يوجد طلاب</p>'}</div>
   <div class="rp-ft"><div><span></span>المعلم</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>إدارة المدرسة</div></div>
   <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
 }
@@ -141,8 +141,8 @@ function stmtData(s) {
 }
 function stmtCsv() {
   const s = student(st.sid), { r, recs } = stmtData(s);
-  downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'السورة', 'من آية', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'البرنامج / القراءة', 'ملاحظة']]
-    .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), typeAr(x), Q.name(x.surah), x.from, x.to, ayahs(x), Q.juz(x.surah, x.from, x.to).join('-'), x.grade || '', (x.enrollmentId && enrById(x.enrollmentId) ? enrById(x.enrollmentId).label : ''), x.note || ''])));
+  downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'من سورة', 'من آية', 'إلى سورة', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'البرنامج / القراءة', 'ملاحظة']]
+    .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), typeAr(x), Q.name(x.surah), x.from, Q.name(rEnd(x)), x.to, ayahs(x), Q.juz(x.surah, x.from, x.to, rEnd(x)).join('-'), x.grade || '', (x.enrollmentId && enrById(x.enrollmentId) ? enrById(x.enrollmentId).label : ''), x.note || ''])));
 }
 function statementSheet(s) {
   const { r, recs } = stmtData(s), g = agg(recs), t = userById(s.teacher_id);
@@ -158,8 +158,8 @@ function statementSheet(s) {
     ${recs.length ? `<table><tr><th>#</th><th>التاريخ</th><th>النوع</th><th style="text-align:start">السورة والآيات</th><th>الجزء</th><th>التقدير</th><th style="text-align:start">ملاحظة</th></tr>
       ${recs.map((x, i) => { const d = parse(x.date); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td>
         <td><em class="${typeCls(x)}">${typeAr(x)}</em></td>
-        <td style="text-align:start"><b>${Q.name(x.surah)}</b> ${x.from}–${x.to} <small>(${ayahs(x)})${x.enrollmentId && enrById(x.enrollmentId) ? ' • ' + esc(enrById(x.enrollmentId).label) : ''}</small></td>
-        <td>${Q.juz(x.surah, x.from, x.to).join('–')}</td><td>${x.grade || '—'}</td><td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table>`
+        <td style="text-align:start"><b>${rngName(x)}</b> ${x.from}–${x.to} <small>(${ayahs(x)})${x.enrollmentId && enrById(x.enrollmentId) ? ' • ' + esc(enrById(x.enrollmentId).label) : ''}</small></td>
+        <td>${Q.juz(x.surah, x.from, x.to, rEnd(x)).join('–')}</td><td>${x.grade || '—'}</td><td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table>`
       : '<p class="rp-cap" style="padding:16px 0">لا يوجد تسميع في هذه الفترة</p>'}</div>
   <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>ولي الأمر</div></div>
   <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
@@ -216,6 +216,9 @@ function enrollForm(sid, prior) {
     <div id="en_jam" style="display:none"><label class="f">اختر ما جُمع</label>
       <div class="row" style="margin-bottom:8px"><button type="button" class="btn ghost sm" data-act="jam-all">⭐ الجمع بين العشر (كلها)</button><button type="button" class="btn light sm" data-act="jam-none">مسح</button></div>
       <div class="jamgrid">${QURRA.map(([, qn, rs]) => `<div style="padding:3px 0"><b style="color:var(--g1);font-size:13px">${qn}</b> ${rs.map(([k, n]) => `<label><input type="checkbox" name="jam" value="${k}"> ${n}</label>`).join('')}</div>`).join('')}</div></div>
+    ${!prior && !s.hafiz ? `<div style="border:1.5px solid var(--gold);border-radius:14px;padding:10px;background:var(--gold2)"><label class="row" style="gap:8px"><input type="checkbox" name="hafnow" style="width:auto;flex:none"> <b>هذا الطالب أتمّ حفظ المصحف</b> <small class="hint">(مطلوب لبرنامج القراءات)</small></label><input name="hafw" maxlength="160" style="margin-top:8px" placeholder="أين أتمّه؟ (اختياري)"></div>` : ''}
+    ${!prior ? `<div><label class="f">وصل في هذه الختمة إلى <span class="hint">(اختياري — يُسجَّل له تسميع سابق من أول المصحف)</span></label>
+      <div class="row"><select name="cs"><option value="">— لم يبدأ بعد —</option>${SURAHS.map((x, i) => `<option value="${i + 1}">${i + 1} - ${x[0]} (${x[1]} آية)</option>`).join('')}</select><input name="ca" type="number" inputmode="numeric" min="1" placeholder="رقم الآية"></div></div>` : ''}
     ${prior ? `<div><label class="f">تاريخ الإتمام <span class="hint">(اختياري)</span></label><input type="date" name="cd" max="${today()}"></div>
       <div><label class="f">أين / عند من أتمّها <span class="hint">(اختياري)</span></label><input name="shaykh" maxlength="160" placeholder="اسم الشيخ أو الجهة"></div>`
       : `<div><label class="f">تاريخ البدء</label><input type="date" name="sd" value="${today()}" max="${today()}"></div>`}

@@ -30,12 +30,12 @@ const Q = (() => {
     name: s => SURAHS[s - 1][0],
     count: s => SURAHS[s - 1][1],
     // الجزء (أو الأجزاء) التي تقع فيها الآيات
-    juz(s, f, t) {
-      const a = juzOf(abs(s, f)), b = juzOf(abs(s, t));
+    juz(s, f, t, s2) {   // s2: سورة النهاية (افتراضياً نفس سورة البداية)
+      const a = juzOf(abs(s, f)), b = juzOf(abs(s2 || s, t));
       return a === b ? [a] : Array.from({ length: b - a + 1 }, (_, i) => a + i);
     },
-    juzText(s, f, t) {
-      const j = Q.juz(s, f, t);
+    juzText(s, f, t, s2) {
+      const j = Q.juz(s, f, t, s2);
       return j.length === 1 ? `الجزء ${j[0]}` : `الأجزاء ${j[0]} – ${j[j.length - 1]}`;
     }
   };
@@ -63,7 +63,7 @@ QURRA.forEach(([, , rs]) => rs.forEach(([k]) => { if (k !== 'hafs_qasr') ALL20.p
 const qariRawis = qk => ((QURRA.find(x => x[0] === qk) || [0, 0, []])[2]).filter(r => r[0] !== 'hafs_qasr').map(r => r[0]);
 function enrLabel(kind, keys) {
   if (kind === 'riwaya') return RW[keys[0]].label;
-  if (kind === 'qiraa') { const qr = QURRA.find(x => x[2].some(r => r[0] === keys[0])); return `قراءة ${qr[1]} (${keys.map(k => RW[k].short.split(' (')[0]).join(' وَ ')})`; }
+  if (kind === 'qiraa') { const qr = QURRA.find(x => x[2].some(r => r[0] === keys[0])); return `قراءة ${qr[1].replace(/^أبو /, 'أبي ')} (${keys.map(k => RW[k].short.split(' (')[0]).join(' وَ ')})`; }
   if (ALL20.every(k => keys.includes(k))) return 'الجمع بين القراءات العشر';
   return 'جمع: ' + keys.map(k => RW[k].label).join(' + ');
 }
