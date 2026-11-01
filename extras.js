@@ -145,15 +145,7 @@ function stmtCsv() {
   downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'من سورة', 'من آية', 'إلى سورة', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'البرنامج / القراءة', 'ملاحظة']]
     .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), typeAr(x), Q.name(x.surah), x.from, Q.name(rEnd(x)), x.to, ayahs(x), Q.juz(x.surah, x.from, x.to, rEnd(x)).join('-'), x.grade || '', (x.enrollmentId && enrById(x.enrollmentId) ? enrById(x.enrollmentId).label : ''), x.note || ''])));
 }
-function stmtTables(recs) {
-  const jz = recs.some(x => x.grade) ? '<th>التقدير</th>' : '';
-  const sm = [['hifz', 'حفظ'], ['review', 'مراجعة'], ['qiraa', 'قراءة']].map(([k, l]) => { const x = recs.filter(r => r.type === k); return x.length ? `${l} ${x.length} (${x.reduce((n, r) => n + ayahs(r), 0)} آية)` : ''; }).filter(Boolean).join(' • ');
-  return `<div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>${recs.length} تسميع${sm ? ' — ' + sm : ''}</span></h3>
-    <table><tr><th>#</th><th>التاريخ</th><th>النوع</th><th style="text-align:start">السورة والآيات</th><th>الآيات</th><th>الجزء</th>${jz}<th style="text-align:start">ملاحظة</th></tr>
-    ${recs.map((x, i) => { const d = parse(x.date), en = x.enrollmentId && enrById(x.enrollmentId); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td><td><em class="${typeCls(x)}">${typeAr(x)}</em></td>
-      <td style="text-align:start"><b>${rngName(x)}</b> ${x.from}–${x.to}${en ? ' <small>• ' + esc(en.label) + '</small>' : ''}</td><td>${ayahs(x)}</td>
-      <td>${Q.juz(x.surah, x.from, x.to, rEnd(x)).join('–')}</td>${jz ? `<td>${x.grade || '—'}</td>` : ''}<td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table></div>`;
-}
+const stmtTables = recs => rptTables(recs);
 function statementSheet(s) {
   const { r, recs } = stmtData(s), g = agg(recs), t = tObj(s);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
