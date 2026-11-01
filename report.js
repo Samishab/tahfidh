@@ -55,7 +55,6 @@ function reportSheet(s, off) {
   const avgLbl = graded ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—';
   const days = g.days.size, att = Math.round(days * 100 / m.days);
   const t = tObj(s), lastH = lastOf(s.id, 'hifz');
-  const shown = recs.slice(-7), more = recs.length - shown.length;
   const notes = recs.filter(r => r.note).slice(-2);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
   const mx = Math.max(1, ...gr.map(x => x[1]));
@@ -90,11 +89,7 @@ function reportSheet(s, off) {
       ${graded ? gr.map(([n, c]) => `<div class="rp-gb"><span>${n}</span><div><i style="width:${c * 100 / mx}%;background:${gcol[n]}"></i></div><b>${c}</b></div>`).join('') : '<p class="rp-cap">لا توجد تقديرات هذا الشهر</p>'}</div>
   </div>
 
-  <div class="rp-box rp-tbl"><h3>📋 سجل التسميع ${recs.length ? `<span>${recs.length} تسميع</span>` : ''}</h3>
-    ${recs.length ? `<table><tr><th>اليوم</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th></tr>
-      ${shown.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em></td>
-        <td><b>${rngName(r)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.enrollmentId && enrById(r.enrollmentId) ? ' • ' + esc(enrById(r.enrollmentId).label) : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
-      ${more > 0 ? `<p class="rp-cap">+ ${more} تسميعات أخرى سابقة في هذا الشهر</p>` : ''}` : '<p class="rp-cap" style="padding:14px 0">لا يوجد تسميع مسجل في هذا الشهر</p>'}</div>
+  ${recs.length ? rptTables(recs) : '<div class="rp-box rp-tbl"><h3>📋 سجل التسميع</h3><p class="rp-cap" style="padding:14px 0">لا يوجد تسميع مسجل في هذا الشهر</p></div>'}
 
   ${notes.length ? `<div class="rp-box rp-notes"><h3>📝 ملاحظات المعلم</h3>${notes.map(r => { const d = parse(r.date); return `<p>• <b>${d.getDate()}/${d.getMonth() + 1}</b> — ${esc(r.note)}</p>`; }).join('')}</div>` : ''}
 
@@ -102,6 +97,15 @@ function reportSheet(s, off) {
   <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brandFor(s.school_id).name)}</div>`;
 }
 
+function rptTables(recs) {
+  const secs = [], hf = recs.filter(r => r.type === 'hifz'), rv = recs.filter(r => r.type === 'review');
+  if (hf.length) secs.push(['📖 الحفظ', hf]);
+  if (rv.length) secs.push(['🔁 المراجعة', rv]);
+  [...new Set(recs.filter(r => r.type === 'qiraa').map(r => r.enrollmentId))].forEach(id => { const e = enrById(id); secs.push(['📚 قراءة: ' + (e ? e.label : 'ختمة'), recs.filter(r => r.type === 'qiraa' && r.enrollmentId === id)]); });
+  return secs.map(([title, rows]) => `<div class="rp-box rp-tbl"><h3>${esc(title)} <span>${rows.length} تسميع • ${rows.reduce((n, r) => n + ayahs(r), 0)} آية</span></h3>
+    <table><tr><th>اليوم</th><th>السورة والآيات</th><th>الآيات</th><th>الجزء</th><th>التقدير</th></tr>
+    ${rows.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><b>${rngName(r)}</b> ${r.from}–${r.to}</td><td>${ayahs(r)}</td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table></div>`).join('');
+}
 function viewReport() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
   const off = st.ro || 0, m = monthRange(off);
@@ -109,9 +113,9 @@ function viewReport() {
   <div class="card noprint">
     <div class="nav-period"><button data-act="rprev">›</button><div>${m.label}<small>التقرير الشهري — ${esc(s.name)}</small></div><button data-act="rnext" ${off >= 0 ? 'disabled' : ''}>‹</button></div>
     <div class="row"><button class="btn gold" data-act="print">🖨 طباعة / حفظ PDF</button><button class="btn light auto" data-act="rback">رجوع</button></div>
-    <p class="hint" style="margin:8px 0 0">في نافذة الطباعة اختر «حفظ بتنسيق PDF». التقرير صفحة A4 واحدة.</p>
+    <p class="hint" style="margin:8px 0 0">في نافذة الطباعة اختر «حفظ بتنسيق PDF». يمتد التقرير لأكثر من صفحة إذا كثرت التسميعات.</p>
   </div>
-  <div class="rptwrap" id="rptwrap"><div class="rpt" id="rpt">${reportSheet(s, off)}</div></div>`;
+  <div class="rptwrap" id="rptwrap"><div class="rpt flow" id="rpt">${reportSheet(s, off)}</div></div>`;
 }
 function fitReport() {
   const w = $('#rptwrap'), r = $('#rpt'); if (!w || !r) return;
