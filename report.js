@@ -24,15 +24,16 @@ function svgDonut(h, r) {
 }
 /* أعمدة يومية (اليوم 1 على اليمين) */
 function svgBars(per) {
-  const W = 470, H = 150, pad = 20, ph = H - pad - 16, bw = (W - 8) / per.length, mx = Math.max(1, ...per.map(x => x.h + x.r));
+  const W = 470, H = 150, pad = 20, ph = H - pad - 16, bw = (W - 8) / per.length, mx = Math.max(1, ...per.map(x => x.h + x.r + x.q));
   let g = '';
   [0, .5, 1].forEach(f => { const y = H - pad - ph * f; g += `<line x1="4" x2="${W - 4}" y1="${y}" y2="${y}" stroke="#e6efe9" stroke-width="1" ${f ? 'stroke-dasharray="3 3"' : ''}/>`; });
   g += `<text x="6" y="${H - pad - ph - 3}" font-size="8" fill="#6b7d75">${mx}</text>`;
   per.forEach((x, i) => {
-    const cx = W - 4 - (i + .5) * bw, w = Math.max(3, bw * .62), hh = ph * x.h / mx, rh = ph * x.r / mx, base = H - pad;
+    const cx = W - 4 - (i + .5) * bw, w = Math.max(3, bw * .62), hh = ph * x.h / mx, rh = ph * x.r / mx, qh = ph * (x.q || 0) / mx, base = H - pad;
     if (x.r) g += `<rect x="${cx - w / 2}" y="${base - hh - rh}" width="${w}" height="${rh}" rx="2.5" fill="#d4a437"/>`;
+    if (x.q) g += `<rect x="${cx - w / 2}" y="${base - hh - rh - qh}" width="${w}" height="${qh}" rx="2.5" fill="#6b73d6"/>`;
     if (x.h) g += `<rect x="${cx - w / 2}" y="${base - hh}" width="${w}" height="${hh}" rx="2.5" fill="#14956b"/>`;
-    if (x.h + x.r) g += `<text x="${cx}" y="${base - hh - rh - 3}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#0b5d45">${x.h + x.r}</text>`;
+    if (x.h + x.r + (x.q || 0)) g += `<text x="${cx}" y="${base - hh - rh - qh - 3}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#0b5d45">${x.h + x.r + (x.q || 0)}</text>`;
     if (per.length <= 16 || i % 2 === 0) g += `<text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="8.5" fill="${x.h + x.r ? '#0b5d45' : '#9aa9a2'}">${i + 1}</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none">${g}</svg>`;
@@ -42,7 +43,7 @@ function reportSheet(s, off) {
   const m = monthRange(off), a = ymd(m.s), b = ymd(m.e);
   const recs = db.records.filter(r => r.studentId === s.id && r.date >= a && r.date <= b).sort((x, y) => x.date.localeCompare(y.date) || x.id - y.id);
   const g = agg(recs);
-  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), x = agg(recs.filter(r => r.date === dt)); return { h: x.h, r: x.r }; });
+  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), x = agg(recs.filter(r => r.date === dt)); return { h: x.h, r: x.r, q: x.q }; });
   const mem = memorized(s.id), total = mem.reduce((x, y) => x + y, 0), pct = total * 100 / Q.TOTAL;
   const juz = Array.from({ length: 30 }, (_, i) => {
     const st0 = Q.juzAbs[i], e = (Q.juzAbs[i + 1] || Q.TOTAL + 1) - 1; let c = 0;
@@ -53,7 +54,7 @@ function reportSheet(s, off) {
   const avg = graded ? gr.reduce((x, [n, c]) => x + GP[n] * c, 0) / graded : 0;
   const avgLbl = graded ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—';
   const days = g.days.size, att = Math.round(days * 100 / m.days);
-  const t = userById(s.teacher_id), lastH = lastOf(s.id, 'hifz', s.riwaya || 'hafs');
+  const t = userById(s.teacher_id), lastH = lastOf(s.id, 'hifz');
   const shown = recs.slice(-7), more = recs.length - shown.length;
   const notes = recs.filter(r => r.note).slice(-2);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
@@ -68,13 +69,13 @@ function reportSheet(s, off) {
 
   <div class="rp-st">
     <div class="rp-av">${initial(s.name)}</div>
-    <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : '', s.riwaya && s.riwaya !== 'hafs' ? 'رواية ' + RW[s.riwaya].label : ''].filter(Boolean).map(esc).join(' • ')}</p>
+    <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : '', s.program === 'qiraat' ? 'برنامج قراءات' : ''].filter(Boolean).map(esc).join(' • ')}</p>
       ${lastH ? `<p class="rp-last">📍 آخر موضع حفظ: <b>${recText(lastH)}</b></p>` : ''}</div>
     <div class="rp-ring">${svgRing(pct, '#d4a437', pct.toFixed(1) + '%', `${total} آية من القرآن`)}</div></div>
 
   <div class="rp-kpis">
     ${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${kpi('🗓', `${days}<small>/${m.days}</small>`, 'أيام التسميع', '#3b7ddd')}
-    ${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🏅', avgLbl, 'متوسط التقدير', '#12a150')}</div>
+    ${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🏅', avgLbl, 'متوسط التقدير', '#12a150')}</div>
 
   <div class="rp-row">
     <div class="rp-box rp-w2"><h3>📈 النشاط اليومي <span><i style="background:#14956b"></i>حفظ <i style="background:#d4a437"></i>مراجعة</span></h3><div class="rp-chart">${svgBars(per)}</div></div>
@@ -91,8 +92,8 @@ function reportSheet(s, off) {
 
   <div class="rp-box rp-tbl"><h3>📋 سجل التسميع ${recs.length ? `<span>${recs.length} تسميع</span>` : ''}</h3>
     ${recs.length ? `<table><tr><th>اليوم</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th></tr>
-      ${shown.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${r.type === 'hifz' ? 'h' : 'r'}">${r.type === 'hifz' ? 'حفظ' : 'مراجعة'}</em></td>
-        <td><b>${Q.name(r.surah)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.riwaya && r.riwaya !== 'hafs' ? ' • ' + RW[r.riwaya].short : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
+      ${shown.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em></td>
+        <td><b>${Q.name(r.surah)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.enrollmentId && enrById(r.enrollmentId) ? ' • ' + esc(enrById(r.enrollmentId).label) : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table>
       ${more > 0 ? `<p class="rp-cap">+ ${more} تسميعات أخرى سابقة في هذا الشهر</p>` : ''}` : '<p class="rp-cap" style="padding:14px 0">لا يوجد تسميع مسجل في هذا الشهر</p>'}</div>
 
   ${notes.length ? `<div class="rp-box rp-notes"><h3>📝 ملاحظات المعلم</h3>${notes.map(r => { const d = parse(r.date); return `<p>• <b>${d.getDate()}/${d.getMonth() + 1}</b> — ${esc(r.note)}</p>`; }).join('')}</div>` : ''}

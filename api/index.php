@@ -8,7 +8,7 @@ header('X-Content-Type-Options: nosniff');
 $cfg = require dirname(__DIR__, 2) . '/tahfidh_config.php';
 $AYAHS = require __DIR__ . '/quran.php';
 const GRADES = ['ممتاز', 'جيد جداً', 'جيد', 'مقبول', 'إعادة'];
-const RIWAYAT = ['hafs', 'shuba', 'qalun', 'warsh', 'bazzi', 'qunbul', 'duri_a', 'susi', 'hisham', 'zakwan', 'khalaf_h', 'khallad', 'abulharith', 'duri_k', 'wardan', 'jammaz', 'ruways', 'rawh', 'ishaq', 'idris'];
+const RIWAYAT = ['hafs', 'hafs_qasr', 'shuba', 'qalun', 'warsh', 'bazzi', 'qunbul', 'duri_a', 'susi', 'hisham', 'zakwan', 'khalaf_h', 'khallad', 'abulharith', 'duri_k', 'wardan', 'jammaz', 'ruways', 'rawh', 'ishaq', 'idris'];
 
 /* ---------- أدوات ---------- */
 function out($d, int $c = 200): never { http_response_code($c); echo json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); exit; }
@@ -85,16 +85,32 @@ function mgrOwns(array $me, $schoolId): bool { return $me['role'] === 'admin' ||
 function certOut(array $c): array {
     return ['id' => (int)$c['id'], 'serial' => $c['serial'], 'studentId' => (int)$c['student_id'], 'student' => $c['student_name'], 'school' => $c['school_name'],
         'kind' => $c['kind'], 'title' => $c['title'], 'riwaya' => $c['riwaya'], 'from' => $c['period_from'], 'to' => $c['period_to'],
-        'grade' => $c['grade'], 'note' => $c['note'] ?? '', 'date' => $c['issued_at'], 'issuer' => $c['issuer_name']];
+        'grade' => $c['grade'], 'note' => $c['note'] ?? '', 'date' => $c['issued_at'], 'issuer' => $c['issuer_name'],
+        'label' => $c['riwaya_label'] ?? '', 'enrollmentId' => !empty($c['enrollment_id']) ? (int)$c['enrollment_id'] : null];
 }
 /** هل أتمّ الطالب حفظ المصحف كاملاً في هذه الرواية؟ */
-function memorizedAll(int $sid, string $rw): bool {
+function memorizedAll(int $sid, ?int $enr = null): bool {
     global $AYAHS;
     $off = [0]; foreach ($AYAHS as $i => $n) $off[] = $off[$i] + $n;
     $m = array_fill(0, 6236, false);
-    foreach (q("SELECT surah,ayah_from,ayah_to FROM records WHERE student_id=? AND type='hifz' AND riwaya=?", [$sid, $rw])->fetchAll() as $r)
+    $rows = $enr ? q("SELECT surah,ayah_from,ayah_to FROM records WHERE student_id=? AND type='qiraa' AND enrollment_id=?", [$sid, $enr])->fetchAll()
+        : q("SELECT surah,ayah_from,ayah_to FROM records WHERE student_id=? AND type='hifz' AND enrollment_id IS NULL", [$sid])->fetchAll();
+    foreach ($rows as $r)
         for ($i = $off[$r['surah'] - 1] + $r['ayah_from']; $i <= $off[$r['surah'] - 1] + $r['ayah_to']; $i++) $m[$i - 1] = true;
     return !in_array(false, $m, true);
+}
+function enrOut(array $e): array {
+    return ['id' => (int)$e['id'], 'studentId' => (int)$e['student_id'], 'kind' => $e['kind'], 'riwayat' => array_values(array_filter(explode(',', $e['riwayat']))),
+        'label' => $e['label'], 'status' => $e['status'], 'prior' => (bool)$e['prior'], 'startedAt' => $e['started_at'], 'completedAt' => $e['completed_at'],
+        'shaykh' => $e['shaykh'] ?? '', 'note' => $e['note'] ?? ''];
+}
+/** إتمام الختمة تلقائياً عند تغطية كل آيات المصحف */
+function syncEnrollment(int $enr): ?array {
+    $e = q('SELECT * FROM enrollments WHERE id=?', [$enr])->fetch();
+    if (!$e) return null;
+    if (!$e['prior'] && $e['status'] === 'active' && memorizedAll((int)$e['student_id'], $enr))
+        q("UPDATE enrollments SET status='completed', completed_at=? WHERE id=?", [date('Y-m-d'), $enr]);
+    return q('SELECT * FROM enrollments WHERE id=?', [$enr])->fetch();
 }
 function validDate(?string $d): ?string { return $d && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && checkdate((int)substr($d, 5, 2), (int)substr($d, 8, 2), (int)substr($d, 0, 4)) ? $d : null; }
 function iso(string $d): string { return date('c', strtotime($d)); }
@@ -103,7 +119,7 @@ function iso(string $d): string { return date('c', strtotime($d)); }
 function recOut(array $r): array {
     return ['id' => (int)$r['id'], 'studentId' => (int)$r['student_id'], 'date' => $r['rec_date'], 'type' => $r['type'],
         'surah' => (int)$r['surah'], 'from' => (int)$r['ayah_from'], 'to' => (int)$r['ayah_to'], 'grade' => $r['grade'],
-        'note' => $r['note'] ?? '', 'by' => $r['by_name'] ?? '', 'riwaya' => $r['riwaya'] ?? 'hafs'];
+        'note' => $r['note'] ?? '', 'by' => $r['by_name'] ?? '', 'riwaya' => $r['riwaya'] ?? 'hafs', 'enrollmentId' => !empty($r['enrollment_id']) ? (int)$r['enrollment_id'] : null];
 }
 function msgOut(array $m): array {
     return ['id' => (int)$m['id'], 'studentId' => (int)$m['student_id'], 'senderId' => (int)$m['sender_id'],
@@ -118,12 +134,13 @@ const MSG_SQL = 'SELECT m.*, u.name sname, u.role srole FROM messages m LEFT JOI
 
 function bootstrap(array $u): array {
     [$w, $p] = scope($u);
-    $students = q("SELECT id,name,grp,riwaya,school_id,teacher_id,user_id FROM students WHERE $w ORDER BY name", $p)->fetchAll();
+    $students = q("SELECT id,name,grp,riwaya,program,hafiz,hafiz_where,hafiz_note,school_id,teacher_id,user_id FROM students WHERE $w ORDER BY name", $p)->fetchAll();
     $ids = array_map(fn($s) => (int)$s['id'], $students);
     $in = $ids ? implode(',', $ids) : '0';
     $par = [];
     foreach (q("SELECT student_id,parent_id FROM parent_student WHERE student_id IN ($in)")->fetchAll() as $r) $par[(int)$r['student_id']][] = (int)$r['parent_id'];
-    $stOut = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'group' => $s['grp'] ?? '', 'riwaya' => $s['riwaya'] ?? 'hafs', 'school_id' => $s['school_id'] ? (int)$s['school_id'] : null,
+    $stOut = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'group' => $s['grp'] ?? '', 'riwaya' => $s['riwaya'] ?? 'hafs', 'program' => $s['program'] ?? 'hifz', 'hafiz' => (bool)($s['hafiz'] ?? 0),
+        'hafizWhere' => $s['hafiz_where'] ?? '', 'hafizNote' => $s['hafiz_note'] ?? '', 'school_id' => $s['school_id'] ? (int)$s['school_id'] : null,
         'teacher_id' => $s['teacher_id'] ? (int)$s['teacher_id'] : null, 'user_id' => $s['user_id'] ? (int)$s['user_id'] : null,
         'parents' => $par[(int)$s['id']] ?? []], $students);
     $recs = array_map('recOut', q("SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.student_id IN ($in) ORDER BY r.rec_date DESC, r.id DESC")->fetchAll());
@@ -143,7 +160,8 @@ function bootstrap(array $u): array {
 
     $res = ['me' => userOut($u) + ['must_change' => (bool)$u['must_change']], 'school' => $school, 'schools' => $schools,
         'students' => $stOut, 'records' => $recs, 'messages' => $msgs, 'reads' => (object)$reads, 'users' => [],
-        'certs' => array_map('certOut', q("SELECT * FROM certificates WHERE student_id IN ($in) ORDER BY id DESC")->fetchAll())];
+        'certs' => array_map('certOut', q("SELECT * FROM certificates WHERE student_id IN ($in) ORDER BY id DESC")->fetchAll()),
+        'enrollments' => array_map('enrOut', q("SELECT * FROM enrollments WHERE student_id IN ($in) ORDER BY id")->fetchAll())];
     $reqOut = fn($r) => ['id' => (int)$r['id'], 'role' => $r['role'], 'name' => $r['name'], 'username' => $r['username'],
         'school_id' => $r['school_id'] ? (int)$r['school_id'] : null, 'school_name' => $r['school_name'] ?? '', 'children' => $r['children'] ?? '', 'at' => iso($r['created_at'])];
     if ($u['role'] === 'admin') {
@@ -168,15 +186,13 @@ function validRecord(): array {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || !checkdate((int)substr($d, 5, 2), (int)substr($d, 8, 2), (int)substr($d, 0, 4))) fail('تاريخ غير صحيح');
     if ($d > date('Y-m-d', strtotime('+1 day'))) fail('لا يمكن تسجيل تاريخ مستقبلي');
     $type = $b['type'] ?? '';
-    if (!in_array($type, ['hifz', 'review'], true)) fail('نوع التسميع غير صحيح');
+    if (!in_array($type, ['hifz', 'review', 'qiraa'], true)) fail('نوع التسميع غير صحيح');
     $s = (int)($b['surah'] ?? 0); $f = (int)($b['from'] ?? 0); $t = (int)($b['to'] ?? 0);
     if ($s < 1 || $s > 114) fail('سورة غير صحيحة');
     if ($f < 1 || $t < $f || $t > $AYAHS[$s - 1]) fail('أرقام الآيات غير صحيحة (عدد آيات السورة ' . $AYAHS[$s - 1] . ')');
     $g = (string)($b['grade'] ?? '');
     if ($g !== '' && !in_array($g, GRADES, true)) fail('تقدير غير صحيح');
-    $rw = (string)($b['riwaya'] ?? 'hafs');
-    if (!in_array($rw, RIWAYAT, true)) fail('رواية غير صحيحة');
-    return [$d, $type, $s, $f, $t, $g, str('note', 500), $rw];
+    return [$d, $type, $s, $f, $t, $g, str('note', 500), (int)($b['enrollmentId'] ?? 0)];
 }
 function uniqueUsername(string $name, int $exceptId = 0): void {
     if (!preg_match('/^[\p{L}\p{N}_.@+-]{3,60}$/u', $name)) fail('اسم المستخدم من 3 إلى 60 حرفاً (حروف وأرقام فقط)');
@@ -229,19 +245,32 @@ try {
     /* ----- التسميع ----- */
     case 'record_save': {
         $u = need('admin', 'school_admin', 'teacher');
-        [$d, $type, $s, $f, $t, $g, $note, $rw] = validRecord();
+        [$d, $type, $s, $f, $t, $g, $note, $enr] = validRecord();
         $sid = (int)(body()['studentId'] ?? 0); $id = (int)(body()['id'] ?? 0);
-        if (!canSee($u, $sid)) fail('الطالب غير موجود', 404);
-        if ($rw !== 'hafs') { $tid = (int)q('SELECT teacher_id FROM students WHERE id=?', [$sid])->fetchColumn(); if (!qiraatAllowed($u, $tid ?: null)) fail('القراءات الأخرى غير مفعّلة في حسابك'); }
-        if ($id) {
-            $old = q('SELECT student_id FROM records WHERE id=?', [$id])->fetch();
-            if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
-            q('UPDATE records SET student_id=?, rec_date=?, type=?, surah=?, ayah_from=?, ayah_to=?, grade=?, note=?, riwaya=? WHERE id=?', [$sid, $d, $type, $s, $f, $t, $g, $note, $rw, $id]);
+        $stu = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
+        if (!$stu || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
+        if ($type === 'qiraa') {
+            $e = $enr ? q('SELECT * FROM enrollments WHERE id=? AND student_id=?', [$enr, $sid])->fetch() : null;
+            if (!$e) fail('اختر برنامج القراءة');
+            if (!qiraatAllowed($u, $stu['teacher_id'] ? (int)$stu['teacher_id'] : null)) fail('القراءات غير مفعّلة في حسابك');
+            if ($e['prior']) fail('قراءة سابقة منجزة لا يُسجَّل لها تسميع');
+            if ($e['status'] !== 'active' && !$id) fail('هذه الختمة مكتملة');
         } else {
-            q('INSERT INTO records (student_id,teacher_id,rec_date,type,surah,ayah_from,ayah_to,grade,note,riwaya) VALUES (?,?,?,?,?,?,?,?,?,?)', [$sid, $u['id'], $d, $type, $s, $f, $t, $g, $note, $rw]);
+            $enr = 0;
+            if ($stu['program'] === 'qiraat') fail('طالب القراءات لا يُسجَّل له حفظ ومراجعة');
+        }
+        $oldEnr = 0;
+        if ($id) {
+            $old = q('SELECT student_id, enrollment_id FROM records WHERE id=?', [$id])->fetch();
+            if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
+            $oldEnr = (int)$old['enrollment_id'];
+            q('UPDATE records SET student_id=?, rec_date=?, type=?, surah=?, ayah_from=?, ayah_to=?, grade=?, note=?, enrollment_id=? WHERE id=?', [$sid, $d, $type, $s, $f, $t, $g, $note, $enr ?: null, $id]);
+        } else {
+            q('INSERT INTO records (student_id,teacher_id,rec_date,type,surah,ayah_from,ayah_to,grade,note,enrollment_id) VALUES (?,?,?,?,?,?,?,?,?,?)', [$sid, $u['id'], $d, $type, $s, $f, $t, $g, $note, $enr ?: null]);
             $id = (int)db()->lastInsertId();
         }
-        out(['record' => recOut(q('SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.id=?', [$id])->fetch())]);
+        $en = $enr ? syncEnrollment($enr) : null;
+        out(['record' => recOut(q('SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.id=?', [$id])->fetch()), 'enrollment' => $en ? enrOut($en) : null]);
     }
     case 'record_delete': {
         $u = need('admin', 'school_admin', 'teacher'); $id = (int)(body()['id'] ?? 0);
@@ -349,8 +378,13 @@ try {
         if ($sa) $school = (int)$me['school_id'];
         $parents = array_values(array_unique(array_map('intval', is_array($b['parent_ids'] ?? null) ? $b['parent_ids'] : [])));
         $login = normUser(str('login_username', 60));
-        $rw = (string)($b['riwaya'] ?? 'hafs'); if (!in_array($rw, RIWAYAT, true)) $rw = 'hafs';
-        if ($rw !== 'hafs' && !qiraatAllowed($me, $teacher)) fail('فعّل القراءات في حساب المعلم أو حسابك أولاً');
+        $program = ($b['program'] ?? 'hifz') === 'qiraat' ? 'qiraat' : 'hifz'; $hafiz = !empty($b['hafiz']) ? 1 : 0;
+        $hw = str('hafiz_where', 160); $hn = str('hafiz_note', 300);
+        $priors = is_array($b['prior_list'] ?? null) ? array_slice($b['prior_list'], 0, 30) : [];
+        if ($program === 'qiraat') {
+            if (!qiraatAllowed($me, $teacher)) fail('فعّل القراءات في حساب المعلم أو حسابك أولاً');
+            if (!$hafiz && !($id && memorizedAll($id))) fail('برنامج القراءات للحافظين فقط: علّم «أتمّ حفظ المصحف»');
+        }
         if ($name === '') fail('اسم الطالب مطلوب');
         if (!$school || !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('اختر المدرسة');
         if ($teacher) {
@@ -366,10 +400,16 @@ try {
         $old = $id ? q('SELECT * FROM students WHERE id=?', [$id])->fetch() : null;
         if ($id && !$old) fail('الطالب غير موجود', 404);
         if ($old && !mgrOwns($me, $old['school_id'])) fail('غير مصرح', 403);
-        if ($id) q('UPDATE students SET name=?, school_id=?, teacher_id=?, grp=?, riwaya=? WHERE id=?', [$name, $school, $teacher, $grp, $rw, $id]);
-        else { q('INSERT INTO students (name,school_id,teacher_id,grp,riwaya) VALUES (?,?,?,?,?)', [$name, $school, $teacher, $grp, $rw]); $id = (int)db()->lastInsertId(); }
+        if ($id) q('UPDATE students SET name=?, school_id=?, teacher_id=?, grp=?, program=?, hafiz=?, hafiz_where=?, hafiz_note=? WHERE id=?', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn, $id]);
+        else { q('INSERT INTO students (name,school_id,teacher_id,grp,program,hafiz,hafiz_where,hafiz_note) VALUES (?,?,?,?,?,?,?,?)', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn]); $id = (int)db()->lastInsertId(); }
         q('DELETE FROM parent_student WHERE student_id=?', [$id]);
         foreach ($parents as $pid) q('INSERT INTO parent_student (parent_id,student_id) VALUES (?,?)', [$pid, $id]);
+        if (!$old) foreach ($priors as $pl) {            // قراءات / روايات أتمّها قبل الالتحاق
+            $k = array_values(array_filter(array_map('strval', is_array($pl['riwayat'] ?? null) ? $pl['riwayat'] : []), fn($x) => in_array($x, RIWAYAT, true)));
+            $kd = $pl['kind'] ?? ''; $lb = mb_substr(trim((string)($pl['label'] ?? '')), 0, 200);
+            if (!$k || $lb === '' || !in_array($kd, ['riwaya', 'qiraa', 'jam'], true)) continue;
+            q("INSERT INTO enrollments (student_id,kind,riwayat,label,status,prior,shaykh,created_by) VALUES (?,?,?,?,'completed',1,?,?)", [$id, $kd, implode(',', $k), $lb, str('prior_where', 160), $me['id']]);
+        }
         // حساب الطالب (اختياري)
         $uid = $old ? (int)$old['user_id'] : 0; $cred = null;
         if ($login !== '') {
@@ -392,7 +432,7 @@ try {
         $s = q('SELECT user_id,school_id FROM students WHERE id=?', [$id])->fetch();
         if (!$s) fail('الطالب غير موجود', 404);
         if (!mgrOwns($me, $s['school_id'])) fail('غير مصرح', 403);
-        foreach (['records', 'messages', 'message_reads', 'parent_student', 'certificates'] as $t) q("DELETE FROM $t WHERE student_id=?", [$id]);
+        foreach (['records', 'messages', 'message_reads', 'parent_student', 'certificates', 'enrollments'] as $t) q("DELETE FROM $t WHERE student_id=?", [$id]);
         if ($s['user_id']) q('DELETE FROM users WHERE id=?', [$s['user_id']]);
         q('DELETE FROM students WHERE id=?', [$id]);
         out(['ok' => true]);
@@ -403,13 +443,17 @@ try {
         $u = need('admin', 'school_admin', 'teacher'); $b = body(); $sid = (int)($b['studentId'] ?? 0);
         $s = q('SELECT s.*, sc.name AS school FROM students s LEFT JOIN schools sc ON sc.id=s.school_id WHERE s.id=?', [$sid])->fetch();
         if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
-        $kind = $b['kind'] ?? ''; if (!in_array($kind, ['khatm', 'period', 'custom'], true)) fail('نوع الشهادة غير صحيح');
-        $rw = (string)($b['riwaya'] ?? 'hafs'); if (!in_array($rw, RIWAYAT, true)) fail('رواية غير صحيحة');
-        if ($rw !== 'hafs' && !qiraatAllowed($u, $s['teacher_id'] ? (int)$s['teacher_id'] : null)) fail('القراءات الأخرى غير مفعّلة في حسابك');
-        $title = str('title', 160);
+        $kind = $b['kind'] ?? ''; if (!in_array($kind, ['khatm', 'period', 'custom', 'qiraat'], true)) fail('نوع الشهادة غير صحيح');
+        $title = str('title', 160); $enrId = null; $label = '';
         if ($kind === 'khatm') {
-            if (!memorizedAll($sid, $rw)) fail('لم يُتمّ الطالب حفظ المصحف كاملاً في هذه الرواية بعد');
+            if (!memorizedAll($sid)) fail('لم يُتمّ الطالب حفظ المصحف كاملاً بعد');
             if ($title === '') $title = 'شهادة ختم حفظ القرآن الكريم';
+        } elseif ($kind === 'qiraat') {
+            $e = q('SELECT * FROM enrollments WHERE id=? AND student_id=?', [(int)($b['enrollmentId'] ?? 0), $sid])->fetch();
+            if (!$e) fail('اختر الختمة');
+            if ($e['status'] !== 'completed') fail('لم تكتمل هذه الختمة بعد');
+            $enrId = (int)$e['id']; $label = $e['label'];
+            if ($title === '') $title = 'شهادة إتمام قراءة ختمة كاملة';
         } elseif ($title === '') $title = $kind === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
         $pf = validDate($b['period_from'] ?? null); $pt = validDate($b['period_to'] ?? null);
         if ($kind === 'period' && (!$pf || !$pt || $pf > $pt)) fail('حدد فترة صحيحة (من / إلى)');
@@ -418,8 +462,8 @@ try {
         $al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         do { $serial = 'TH-' . date('Y') . '-'; for ($i = 0; $i < 6; $i++) $serial .= $al[random_int(0, strlen($al) - 1)]; }
         while (q('SELECT 1 FROM certificates WHERE serial=?', [$serial])->fetchColumn());
-        q('INSERT INTO certificates (serial,student_id,student_name,school_name,kind,title,riwaya,period_from,period_to,grade,note,issued_by,issuer_name,issued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            [$serial, $sid, $s['name'], $s['school'] ?? '', $kind, $title, $rw, $kind === 'period' ? $pf : null, $kind === 'period' ? $pt : null, $grade, str('note', 300), $u['id'], $u['name'], $date]);
+        q('INSERT INTO certificates (serial,student_id,student_name,school_name,kind,title,enrollment_id,riwaya_label,period_from,period_to,grade,note,issued_by,issuer_name,issued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            [$serial, $sid, $s['name'], $s['school'] ?? '', $kind, $title, $enrId, $label, $kind === 'period' ? $pf : null, $kind === 'period' ? $pt : null, $grade, str('note', 300), $u['id'], $u['name'], $date]);
         out(['cert' => certOut(q('SELECT * FROM certificates WHERE id=?', [(int)db()->lastInsertId()])->fetch())]);
     }
     case 'cert_delete': {
@@ -441,13 +485,51 @@ try {
         q('UPDATE users SET qiraat=? WHERE id=?', [!empty(body()['on']) ? 1 : 0, $u['id']]);
         out(['ok' => true]);
     }
-    case 'student_riwaya': {
-        $u = need('admin', 'school_admin', 'teacher'); $sid = (int)(body()['id'] ?? 0); $rw = (string)(body()['riwaya'] ?? 'hafs');
-        if (!in_array($rw, RIWAYAT, true)) fail('رواية غير صحيحة');
-        if (!canSee($u, $sid)) fail('غير مصرح', 403);
-        $tid = (int)q('SELECT teacher_id FROM students WHERE id=?', [$sid])->fetchColumn();
-        if ($rw !== 'hafs' && !qiraatAllowed($u, $tid ?: null)) fail('القراءات الأخرى غير مفعّلة في حسابك');
-        q('UPDATE students SET riwaya=? WHERE id=?', [$rw, $sid]);
+    case 'student_hafiz': {          // تعليم الطالب «أتمّ حفظ المصحف» وأين أتمّه
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $sid = (int)($b['id'] ?? 0);
+        $stu = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
+        if (!$stu || !canSee($u, $sid)) fail('غير مصرح', 403);
+        $h = !empty($b['hafiz']) ? 1 : 0;
+        if (!$h && $stu['program'] === 'qiraat') fail('طالب برنامج القراءات يجب أن يبقى حافظاً');
+        q('UPDATE students SET hafiz=?, hafiz_where=?, hafiz_note=? WHERE id=?', [$h, str('where', 160), str('note', 300), $sid]);
+        out(['ok' => true]);
+    }
+    case 'enrollment_save': {
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $id = (int)($b['id'] ?? 0); $sid = (int)($b['studentId'] ?? 0);
+        $s = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
+        if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
+        if (!qiraatAllowed($u, $s['teacher_id'] ? (int)$s['teacher_id'] : null)) fail('فعّل القراءات من «إعدادات القراءات» أولاً');
+        $sd = validDate($b['started_at'] ?? null); $cd = validDate($b['completed_at'] ?? null); $shaykh = str('shaykh', 160); $note = str('note', 300);
+        if ($id) {                                    // تعديل بيانات برنامج قائم
+            $e = q('SELECT * FROM enrollments WHERE id=? AND student_id=?', [$id, $sid])->fetch();
+            if (!$e) fail('البرنامج غير موجود', 404);
+            $status = in_array($b['status'] ?? '', ['active', 'completed'], true) ? $b['status'] : $e['status'];
+            $done = $status === 'completed' ? ($cd ?: $e['completed_at'] ?: date('Y-m-d')) : null;
+            q('UPDATE enrollments SET status=?, started_at=?, completed_at=?, shaykh=?, note=? WHERE id=?', [$status, $sd, $done, $shaykh, $note, $id]);
+        } else {
+            $prior = !empty($b['prior']) ? 1 : 0;
+            $kind = $b['kind'] ?? ''; if (!in_array($kind, ['riwaya', 'qiraa', 'jam'], true)) fail('نوع البرنامج غير صحيح');
+            $keys = array_values(array_unique(array_map('strval', is_array($b['riwayat'] ?? null) ? $b['riwayat'] : [])));
+            foreach ($keys as $k) if (!in_array($k, RIWAYAT, true)) fail('رواية غير صحيحة');
+            if ($kind === 'riwaya' && count($keys) !== 1) fail('اختر رواية واحدة');
+            if ($kind === 'qiraa' && (count($keys) < 1 || count($keys) > 2)) fail('اختر قراءة صحيحة');
+            if ($kind === 'jam' && count($keys) < 2) fail('اختر روايتين على الأقل للجمع');
+            $label = str('label', 200); if ($label === '') fail('اسم البرنامج مطلوب');
+            if (!$prior && !$s['hafiz'] && !memorizedAll($sid)) fail('لا يُسجَّل في برنامج القراءات إلا من أتمّ حفظ المصحف — علّم الطالب «أتمّ حفظ المصحف» أولاً');
+            q('INSERT INTO enrollments (student_id,kind,riwayat,label,status,prior,started_at,completed_at,shaykh,note,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                [$sid, $kind, implode(',', $keys), $label, $prior ? 'completed' : 'active', $prior, $sd, $prior ? $cd : null, $shaykh, $note, $u['id']]);
+            $id = (int)db()->lastInsertId();
+        }
+        out(['enrollment' => enrOut(q('SELECT * FROM enrollments WHERE id=?', [$id])->fetch())]);
+    }
+    case 'enrollment_delete': {
+        $u = need('admin', 'school_admin', 'teacher'); $id = (int)(body()['id'] ?? 0);
+        $e = q('SELECT * FROM enrollments WHERE id=?', [$id])->fetch();
+        if (!$e || !canSee($u, (int)$e['student_id'])) fail('غير مصرح', 403);
+        $n = (int)q("SELECT COUNT(*) FROM records WHERE enrollment_id=?", [$id])->fetchColumn();
+        if ($n && $u['role'] === 'teacher') fail('لا يحذف البرنامج الذي له تسميع إلا مدير المدرسة');
+        q('DELETE FROM records WHERE enrollment_id=?', [$id]);
+        q('DELETE FROM enrollments WHERE id=?', [$id]);
         out(['ok' => true]);
     }
 

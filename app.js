@@ -21,7 +21,7 @@ async function api(route, body, qs = '') {
 }
 
 /* ---------- البيانات ---------- */
-const blank = () => ({ me: null, school: null, schools: [], users: [], students: [], records: [], messages: [], reads: {}, requests: [], certs: [] });
+const blank = () => ({ me: null, school: null, schools: [], users: [], students: [], records: [], messages: [], reads: {}, requests: [], certs: [], enrollments: [] });
 let db = blank();
 const refresh = async () => { db = Object.assign(blank(), await api('bootstrap')); };
 const role = () => db.me.role;
@@ -53,32 +53,45 @@ const st = { view: 'home', ready: false, sid: null, mode: 'week', off: 0, q: '',
 const ayahs = r => r.to - r.from + 1;
 const inRange = (a, b) => db.records.filter(r => r.date >= a && r.date <= b);
 function agg(recs) {
-  const o = { h: 0, r: 0, n: recs.length, days: new Set(), students: new Set() };
-  recs.forEach(r => { r.type === 'hifz' ? o.h += ayahs(r) : o.r += ayahs(r); o.days.add(r.date); o.students.add(r.studentId); });
+  const o = { h: 0, r: 0, q: 0, n: recs.length, days: new Set(), students: new Set() };
+  recs.forEach(r => { r.type === 'hifz' ? o.h += ayahs(r) : r.type === 'qiraa' ? o.q += ayahs(r) : o.r += ayahs(r); o.days.add(r.date); o.students.add(r.studentId); });
   return o;
 }
-function lastOf(sid, type, rv) {
-  return db.records.filter(r => r.studentId === +sid && r.type === type && (!rv || (r.riwaya || 'hafs') === rv)).sort((a, b) => (a.date + String(a.id).padStart(9, '0')).localeCompare(b.date + String(b.id).padStart(9, '0'))).pop();
+const enrOf = sid => db.enrollments.filter(e => e.studentId === +sid);
+const enrById = id => db.enrollments.find(e => e.id === +id);
+const activeEnr = sid => enrOf(sid).filter(e => e.status === 'active' && !e.prior);
+function lastOf(sid, type, enr) {
+  return db.records.filter(r => r.studentId === +sid && r.type === type && (enr ? r.enrollmentId === +enr : !r.enrollmentId))
+    .sort((a, b) => (a.date + String(a.id).padStart(9, '0')).localeCompare(b.date + String(b.id).padStart(9, '0'))).pop();
 }
-function nextPos(sid, type, rv) {
-  const l = lastOf(sid, type, rv);
-  if (!l) return { surah: type === 'hifz' ? 78 : 1, from: 1, to: '', hint: '' };
+function nextPos(sid, type, enr) {
+  const l = lastOf(sid, type, enr), qr = type === 'qiraa';
+  if (!l) return { surah: qr ? 1 : (type === 'hifz' ? 78 : 1), from: 1, to: '', hint: qr ? 'بداية الختمة من سورة الفاتحة' : '' };
   if (l.to < Q.count(l.surah)) return { surah: l.surah, from: l.to + 1, to: '', hint: `آخر موضع: ${Q.name(l.surah)} آية ${l.to} — يبدأ من الآية ${l.to + 1}` };
-  if (l.surah === 114) return { surah: 114, from: 1, to: '', hint: 'ما شاء الله! أتمّ المصحف 🎉' };
+  if (l.surah === 114) return { surah: 114, from: 1, to: '', hint: qr ? 'ما شاء الله! أتمّ الختمة 🎉' : 'ما شاء الله! أتمّ المصحف 🎉' };
   return { surah: l.surah + 1, from: 1, to: '', hint: `أنهى سورة ${Q.name(l.surah)} — اقتراح: ${Q.name(l.surah + 1)} من أولها` };
 }
-const newForm = (sid, type = 'hifz') => { const rw = (student(sid) || {}).riwaya || 'hafs'; return { id: null, sid: sid || '', type, riwaya: rw, date: today(), grade: '', note: '', ...nextPos(sid, type, rw) }; };
-function memorized(sid, rv) {
-  rv = rv || (student(sid) || {}).riwaya || 'hafs';
-  const m = new Uint8Array(Q.TOTAL);
-  db.records.filter(r => r.studentId === +sid && r.type === 'hifz' && (r.riwaya || 'hafs') === rv).forEach(r => {
+const newForm = (sid, type = 'hifz', enr = '') => {
+  const s = student(sid), act = s ? activeEnr(s.id) : [];
+  if (!enr && s && s.program === 'qiraat' && act.length) enr = act[0].id;
+  if (enr) type = 'qiraa';
+  return { id: null, sid: sid || '', type, enr: enr || '', date: today(), grade: '', note: '', ...nextPos(sid, type, enr) };
+};
+// خريطة الحفظ: enr فارغ = حفظ المصحف، وإلا ختمة القراءة المحددة. raw = تجاهل علامة «حافظ» اليدوية
+function memorized(sid, enr, raw) {
+  const m = new Uint8Array(Q.TOTAL), s = student(sid);
+  if (!enr && !raw && s && s.hafiz) { m.fill(1); return m; }
+  db.records.filter(r => r.studentId === +sid && (enr ? r.type === 'qiraa' && r.enrollmentId === +enr : r.type === 'hifz' && !r.enrollmentId)).forEach(r => {
     for (let i = Q.abs(r.surah, r.from); i <= Q.abs(r.surah, r.to); i++) m[i - 1] = 1;
   });
   return m;
 }
+const typeAr = r => ({ hifz: 'حفظ', review: 'مراجعة', qiraa: 'قراءة' }[r.type]);
+const typeCls = r => ({ hifz: 'h', review: 'r', qiraa: 'q' }[r.type]);
 const qiraatOn = () => staff() && !!db.me.qiraat;
+const qiraatAny = () => !!db.me.qiraat || db.users.some(u => u.role === 'teacher' && u.qiraat);
 const rwOptions = sel => QURRA.map(([, qn, rs]) => `<optgroup label="${qn}">${rs.map(([k, n]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${n} عن ${qn}</option>`).join('')}</optgroup>`).join('');
-const rwTag = r => r.riwaya && r.riwaya !== 'hafs' && RW[r.riwaya] ? `<span class="badge b-rw">${RW[r.riwaya].short}</span>` : '';
+const enrTag = r => r.enrollmentId && enrById(r.enrollmentId) ? `<span class="badge b-rw">${esc(enrById(r.enrollmentId).label)}</span>` : '';
 const recText = r => `سورة ${Q.name(r.surah)} (${r.from === r.to ? 'آية ' + r.from : 'من آية ' + r.from + ' إلى ' + r.to})`;
 
 /* ---------- الرسائل ---------- */
@@ -195,8 +208,8 @@ function shell(body) {
 function recCard(r, opts = {}) {
   const s = student(r.studentId), d = parse(r.date);
   return `<div class="rec ${r.type === 'review' ? 'review' : ''}">
-    <div class="top"><span class="badge ${r.type === 'hifz' ? 'b-hifz' : 'b-rev'}">${r.type === 'hifz' ? '📖 حفظ' : '🔁 مراجعة'}</span>
-      ${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : ''}${rwTag(r)}
+    <div class="top"><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}">${{ hifz: '📖 حفظ', review: '🔁 مراجعة', qiraa: '📚 قراءة' }[r.type]}</span>
+      ${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : ''}${enrTag(r)}
       ${opts.noName || !s ? '' : `<span class="who">${esc(s.name)}</span>`}</div>
     <div class="sn">${recText(r)}</div>
     <div class="meta">${ayahs(r)} آية • ${Q.juzText(r.surah, r.from, r.to)} • ${fmtDay(d)} ${fmtS(d)}</div>
@@ -232,7 +245,7 @@ function viewHome() {
   ${!db.students.length ? `<div class="card">${empty('👥', isMgr() ? 'ابدأ بإنشاء مدرسة ومعلم وطلاب من تبويب الإدارة' : 'لم يُسند إليك طلاب بعد، تواصل مع المدير')}${isMgr() ? '<button class="btn block" data-act="nav" data-id="manage">⚙️ الذهاب للإدارة</button>' : ''}</div>` : `
   <div class="card"><h3>🌟 الأكثر نشاطاً هذا الأسبوع</h3>
     ${top.length ? `<div class="list">${top.map(({ s, a: x }, i) => `<div class="item" data-act="open-student" data-id="${s.id}"><div class="avatar">${['🥇', '🥈', '🥉'][i]}</div>
-      <div class="t"><b>${esc(s.name)}</b><small>حفظ ${x.h} • مراجعة ${x.r} آية</small></div><div class="side"><b>${x.days.size}</b><small>أيام</small></div></div>`).join('')}</div>` : empty('🌱', 'لا يوجد تسميع هذا الأسبوع بعد')}
+      <div class="t"><b>${esc(s.name)}</b><small>حفظ ${x.h} • مراجعة ${x.r}${x.q ? ' • قراءة ' + x.q : ''} آية</small></div><div class="side"><b>${x.days.size}</b><small>أيام</small></div></div>`).join('')}</div>` : empty('🌱', 'لا يوجد تسميع هذا الأسبوع بعد')}
   </div>
   ${absent.length ? `<div class="card"><h3>⏳ لم يسمّعوا اليوم (${absent.length})</h3><div class="chips">${absent.map(s => `<button class="chip" data-act="quick" data-id="${s.id}">${esc(s.name)}</button>`).join('')}</div><p class="hint">اضغط على الاسم لتسجيل تسميعه</p></div>` : ''}`}
   <div class="card"><h3>📋 تسميع اليوم</h3>
@@ -249,7 +262,7 @@ function viewKids() {
     return `<div class="item" data-act="open-student" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
       <div class="t"><b>${esc(s.name)}</b><small>${esc(schoolName(s.school_id))}${s.group ? ' • ' + esc(s.group) : ''}</small>
         <div class="pbar"><i style="width:${Math.max(p, 1)}%"></i></div><small>محفوظ ${total} آية (${p.toFixed(1)}%)</small></div>
-      <div class="side"><b>${w.h + w.r}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`;
+      <div class="side"><b>${w.h + w.r + w.q}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`;
   }).join('')}</div>`;
 }
 
@@ -261,8 +274,9 @@ function viewAdd() {
   <div class="card gap">
     <div><label class="f">الطالب</label>
       <select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(s => `<option value="${s.id}" ${+f.sid === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-    <div class="seg gold"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>
-    ${qiraatOn() || (f.riwaya && f.riwaya !== 'hafs') ? `<div><label class="f">الرواية / القراءة</label><select data-f="riwaya">${rwOptions(f.riwaya || 'hafs')}</select></div>` : ''}
+    ${(() => { const so = student(f.sid), ac = so ? activeEnr(so.id) : [];
+      return so && (ac.length || so.program === 'qiraat') ? `<div><label class="f">البرنامج</label><select data-f="enr">${so.program !== 'qiraat' ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>${!ac.length ? '<div class="hint">لا يوجد برنامج قراءة جارٍ لهذا الطالب — أضفه من ملفه.</div>' : ''}</div>` : ''; })()}
+    ${f.enr ? '<div class="info" style="text-align:start">📚 متابعة قراءة ختمة — لا حفظ ولا مراجعة</div>' : `<div class="seg gold"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>`}
     <div><label class="f">تاريخ التسميع</label><input type="date" data-f="date" value="${f.date}" max="${today()}"><div class="hint" id="dayname"></div></div>
     <div><label class="f">السورة</label>
       <select data-f="surah">${SURAHS.map((s, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${s[0]} (${s[1]} آية)</option>`).join('')}</select></div>
@@ -298,11 +312,13 @@ async function saveRec() {
   if (!f.sid) return toast('اختر الطالب أولاً');
   if (!f.date) return toast('اختر التاريخ');
   if (!c.ok) return toast(c.msg);
-  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, riwaya: f.riwaya || 'hafs', surah: +f.surah, from: +f.from, to: +f.to, grade: f.grade, note: f.note.trim() });
+  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, to: +f.to, grade: f.grade, note: f.note.trim() });
   db.records = db.records.filter(x => x.id !== r.record.id); db.records.push(r.record);
-  const was = f.id, sid = f.sid, type = f.type, date = f.date;
-  st.form = { ...newForm(sid, type), date };
-  toast(was ? 'تم تعديل التسميع ✔' : 'تم حفظ التسميع ✔'); render();
+  let done = false;
+  if (r.enrollment) { const old = enrById(r.enrollment.id); done = r.enrollment.status === 'completed' && (!old || old.status !== 'completed'); db.enrollments = db.enrollments.filter(e => e.id !== r.enrollment.id); db.enrollments.push(r.enrollment); }
+  const was = f.id, sid = f.sid, type = f.type, date = f.date, enr = f.enr;
+  st.form = { ...newForm(sid, type, enr), date };
+  toast(done ? '🎉 أتمّ الختمة كاملة! أصدر له شهادة من ملفه' : was ? 'تم تعديل التسميع ✔' : 'تم حفظ التسميع ✔'); render();
 }
 
 /* ---------- الطلاب ---------- */
@@ -314,7 +330,7 @@ function viewStudents() {
     const { total, w } = progressCard(s), t = userById(s.teacher_id), un = unread(s.id);
     return `<div class="item" data-act="open-student" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
       <div class="t"><b>${esc(s.name)}</b><small>${s.group ? esc(s.group) + ' • ' : ''}محفوظ ${total} آية${isMgr() && t ? ' • ' + esc(t.name) : ''}</small></div>
-      <div class="side"><b>${w.h + w.r}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`;
+      <div class="side"><b>${w.h + w.r + w.q}</b><small>آية/أسبوع</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`;
   }).join('')}</div>` : `<div class="card">${empty('👥', db.students.length ? 'لا توجد نتائج' : 'لا يوجد طلاب بعد')}</div>`}`;
 }
 function teacherOptions(school, sel) {
@@ -330,7 +346,12 @@ function studentForm(s) {
     <div><label class="f">اسم الطالب</label><input name="name" required value="${esc(s?.name)}"></div>
     ${isAdmin() ? `<div><label class="f">المدرسة</label><select name="school" id="st_school">${db.schools.map(x => `<option value="${x.id}" ${x.id === sch ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="school" id="st_school" value="${sch}">`}
     <div><label class="f">المعلم المسؤول</label><select name="teacher" id="st_teacher">${teacherOptions(sch, s?.teacher_id)}</select></div>
-    ${qiraatOn() || (s && s.riwaya !== 'hafs') ? `<div><label class="f">الرواية الأساسية للطالب</label><select name="riwaya">${rwOptions(s?.riwaya || 'hafs')}</select></div>` : ''}
+    <div><label class="f">البرنامج</label><select name="program" id="st_program"><option value="hifz" ${(s?.program || 'hifz') === 'hifz' ? 'selected' : ''}>📖 حفظ ومراجعة</option>${qiraatAny() || s?.program === 'qiraat' ? `<option value="qiraat" ${s?.program === 'qiraat' ? 'selected' : ''}>📚 قراءات (للحافظين فقط)</option>` : ''}</select></div>
+    <div style="border:1.5px solid var(--line);border-radius:14px;padding:12px;background:#fff">
+      <label class="row" style="gap:8px"><input type="checkbox" name="hafiz" id="st_hafiz" style="width:auto;flex:none" ${s?.hafiz ? 'checked' : ''}> <b>أتمّ حفظ المصحف كاملاً مسبقاً</b></label>
+      <div class="gap" style="margin-top:8px"><input name="hafwhere" maxlength="160" value="${esc(s?.hafizWhere)}" placeholder="أين أتمّه؟ (اختياري)"><textarea name="hafnote" maxlength="300" placeholder="ملاحظات (اختياري)">${esc(s?.hafizNote)}</textarea></div></div>
+    ${!s ? `<div><label class="f">قراءات / روايات أتمّها سابقاً <span class="hint">(اختياري)</span></label><div class="jamgrid">${QURRA.map(([, qn, rs]) => `<div style="padding:3px 0"><b style="color:var(--g1);font-size:13px">${qn}</b> ${rs.map(([k, n]) => `<label><input type="checkbox" name="prk" value="${k}"> ${n}</label>`).join('')}</div>`).join('')}</div>
+      <input name="prior_where" maxlength="160" style="margin-top:8px" placeholder="عند من / أين أتمّها؟ (اختياري)"></div>` : ''}
     <div><label class="f">المجموعة / الحلقة <span class="hint">(اختياري)</span></label><input name="group" value="${esc(s?.group)}" placeholder="مثال: حلقة الفجر"></div>
     <div><label class="f">أولياء الأمور المرتبطون</label>
       ${parents.length ? `<div class="checks">${parents.map(p => `<label><input type="checkbox" name="par" value="${p.id}" ${s && s.parents.includes(p.id) ? 'checked' : ''}> ${esc(p.name)} <small class="hint">${esc(p.username)}</small></label>`).join('')}</div>` : '<p class="hint">لا يوجد أولياء أمور بعد — أضفهم من تبويب الإدارة ثم عد لربطهم.</p>'}</div>
@@ -344,15 +365,15 @@ function studentForm(s) {
 }
 function viewStudent() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
-  const recs0 = db.records.filter(r => r.studentId === s.id), rvs = [...new Set([s.riwaya || 'hafs', ...recs0.map(r => r.riwaya || 'hafs')])];
-  const rv = rvs.includes(st.rv) ? st.rv : (s.riwaya || 'hafs');
-  const m = memorized(s.id, rv), total = m.reduce((x, y) => x + y, 0), { w } = progressCard(s);
+  const act = activeEnr(s.id), tabs = (s.program !== 'qiraat' ? [{ k: '', l: '📖 حفظ ومراجعة' }] : []).concat(act.map(e => ({ k: String(e.id), l: '📚 ' + e.label })));
+  const cur = tabs.some(x => x.k === String(st.pe || '')) ? String(st.pe || '') : (tabs[0] ? tabs[0].k : '');
+  const m = memorized(s.id, cur), total = m.reduce((x, y) => x + y, 0), { w } = progressCard(s);
   const recs = db.records.filter(r => r.studentId === s.id).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0')));
   const juz = Array.from({ length: 30 }, (_, i) => {
     const a = Q.juzAbs[i], e = (Q.juzAbs[i + 1] || Q.TOTAL + 1) - 1; let c = 0;
     for (let k = a; k <= e; k++) c += m[k - 1]; return Math.round(c * 100 / (e - a + 1));
   });
-  const lastH = lastOf(s.id, 'hifz', rv), t = userById(s.teacher_id), un = unread(s.id);
+  const lastH = lastOf(s.id, cur ? 'qiraa' : 'hifz', cur), t = userById(s.teacher_id), un = unread(s.id);
   const back = staff() ? 'students' : (db.students.length > 1 ? 'home' : '');
   return `
   <div class="card">
@@ -361,12 +382,12 @@ function viewStudent() {
     <div class="item" style="border:0;padding:0;cursor:default"><div class="avatar">${initial(s.name)}</div>
       <div class="t"><b style="font-size:19px">${esc(s.name)}</b><small>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</small></div></div>
   </div>
-  ${qiraatOn() ? `<div class="card"><h3>📚 الرواية الأساسية للطالب</h3><select id="rwdefault" data-id="${s.id}">${rwOptions(s.riwaya || 'hafs')}</select></div>` : ''}
-  ${rvs.length > 1 ? `<div class="card"><h3>📚 الرواية</h3><div class="chips">${rvs.map(k => `<button class="chip ${k === rv ? 'on' : ''}" data-act="rv" data-id="${k}">${RW[k].label}</button>`).join('')}</div></div>` : ''}
+  ${tabs.length > 1 ? `<div class="card"><h3>📚 البرنامج</h3><div class="chips">${tabs.map(x => `<button class="chip ${x.k === cur ? 'on' : ''}" data-act="pe" data-id="${x.k}">${esc(x.l)}</button>`).join('')}</div></div>` : ''}
+  ${progCard(s)}
   <div class="stats">
-    <div class="stat"><b>${total}</b><span>آية محفوظة${rv !== 'hafs' ? ' — ' + RW[rv].label : ''}</span></div>
+    <div class="stat"><b>${total}</b><span>${cur ? 'آية قُرئت من الختمة' : 'آية محفوظة'}</span></div>
     <div class="stat gold"><b>${(total * 100 / Q.TOTAL).toFixed(1)}%</b><span>من القرآن</span></div>
-    <div class="stat blue"><b>${w.h + w.r}</b><span>آيات الأسبوع</span></div>
+    <div class="stat blue"><b>${w.h + w.r + w.q}</b><span>آيات الأسبوع</span></div>
   </div>
   <div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="open-report" data-id="${s.id}">📄 التقرير الشهري</button><button class="btn ghost" data-act="open-stmt" data-id="${s.id}">📑 كشف التسميع</button></div>
   <div class="row" style="margin-bottom:14px">
@@ -377,10 +398,11 @@ function viewStudent() {
   <div class="card"><h3>🗺 خريطة الأجزاء</h3>
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${juz.map((p, i) => `<div style="text-align:center;font-size:12px;border:1.5px solid ${p ? 'var(--g2)' : 'var(--line)'};border-radius:12px;padding:6px 0;background:linear-gradient(to top,${p === 100 ? 'var(--g2)' : 'var(--g3)'} ${p}%,#fff ${p}%);color:${p === 100 ? '#fff' : 'var(--ink)'}"><b>${i + 1}</b><br><small>${p}%</small></div>`).join('')}</div>
     <p class="hint">اللون الممتلئ = الجزء محفوظ بالكامل</p></div>
-  ${lastH ? `<div class="card"><h3>📍 آخر موضع حفظ</h3><div style="font-family:Amiri,serif;font-size:21px;color:var(--g1);font-weight:700">${recText(lastH)}</div></div>` : ''}
-  ${(() => { const cs = db.certs.filter(c => c.studentId === s.id), ready = staff() && total === Q.TOTAL && !cs.some(c => c.kind === 'khatm' && c.riwaya === rv);
+  ${lastH ? `<div class="card"><h3>📍 آخر موضع ${cur ? 'قراءة' : 'حفظ'}</h3><div style="font-family:Amiri,serif;font-size:21px;color:var(--g1);font-weight:700">${recText(lastH)}</div></div>` : ''}
+  ${(() => { const cs = db.certs.filter(c => c.studentId === s.id), ready = staff() && memorized(s.id, '', true).reduce((x, y) => x + y, 0) === Q.TOTAL && !cs.some(c => c.kind === 'khatm'), doneEnr = staff() ? enrOf(s.id).filter(e => e.status === 'completed' && !cs.some(c => c.enrollmentId === e.id)) : [];
     return `<div class="card"><h3>🏆 الشهادات (${cs.length}) ${staff() ? `<button class="more" data-act="cert-new" data-id="${s.id}">＋ إصدار شهادة</button>` : ''}</h3>
     ${ready ? '<div class="info" style="margin-bottom:10px">🎉 أتمّ حفظ المصحف كاملاً — يمكنك إصدار شهادة الختم</div>' : ''}
+    ${doneEnr.map(e => `<div class="info" style="margin-bottom:10px;text-align:start">🎉 أتمّ ${esc(e.label)} <button class="btn gold sm" style="margin-top:6px" data-act="cert-enr" data-id="${e.id}" data-sid="${s.id}">إصدار شهادة</button></div>`).join('')}
     ${cs.length ? `<div class="list">${cs.map(c => `<div class="item" data-act="open-cert" data-id="${c.id}"><div class="avatar">🏆</div><div class="t"><b>${esc(c.title)}</b><small>${fmtG(parse(c.date))} • ${esc(c.serial)}</small></div></div>`).join('')}</div>` : empty('🏅', 'لا توجد شهادات بعد')}</div>`; })()}
   <div class="card"><h3>🕘 جدول التسميع (${recs.length})</h3>${staff()
     ? (recs.length ? `<div class="list">${recs.slice(0, 40).map(r => recCard(r, { noName: true })).join('')}</div>` : empty('📖', 'لا يوجد تسميع مسجل'))
@@ -388,11 +410,11 @@ function viewStudent() {
 }
 function recTable(recs) {
   const f = st.rf || 'all', rows = recs.filter(r => f === 'all' || r.type === f);
-  const seg = [['all', 'الكل'], ['hifz', '📖 حفظ'], ['review', '🔁 مراجعة']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="rfilter" data-id="${k}">${l}</button>`).join('');
+  const seg = [['all', 'الكل'], ['hifz', '📖 حفظ'], ['review', '🔁 مراجعة']].concat(recs.some(r => r.type === 'qiraa') ? [['qiraa', '📚 قراءة']] : []).map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="rfilter" data-id="${k}">${l}</button>`).join('');
   return `<div class="seg" style="margin-bottom:10px">${seg}</div>` + (rows.length ? `<div class="tw"><table class="rt"><tr><th>التاريخ</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th><th></th></tr>
     ${rows.map(r => { const d = parse(r.date); return `<tr><td><b>${fmtDay(d)}</b><br><small>${fmtS(d)}</small></td>
-      <td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : 'b-rev'}">${r.type === 'hifz' ? 'حفظ' : 'مراجعة'}</span></td>
-      <td style="text-align:start"><b>${Q.name(r.surah)}</b><br><small>${r.from}–${r.to} (${ayahs(r)} آية)</small>${rwTag(r) ? '<br>' + rwTag(r) : ''}${r.note ? `<br><small>📝 ${esc(r.note)}</small>` : ''}</td>
+      <td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}">${typeAr(r)}</span></td>
+      <td style="text-align:start"><b>${Q.name(r.surah)}</b><br><small>${r.from}–${r.to} (${ayahs(r)} آية)</small>${enrTag(r) ? '<br>' + enrTag(r) : ''}${r.note ? `<br><small>📝 ${esc(r.note)}</small>` : ''}</td>
       <td>${Q.juz(r.surah, r.from, r.to).join('–')}</td><td>${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '—'}</td>
       <td><button class="btn light sm" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم عن هذا التسميع">💬</button></td></tr>`; }).join('')}</table></div>` : empty('📖', 'لا يوجد تسميع مسجل'));
 }
@@ -400,8 +422,8 @@ function weekReport(s) {
   const ws = weekStart(new Date()), a = ymd(ws), b = ymd(addDays(ws, 6));
   const recs = inRange(a, b).filter(r => r.studentId === s.id).sort((x, y) => x.date.localeCompare(y.date)), g = agg(recs);
   let t = `📘 *${brand().name}*\nتقرير الطالب: *${s.name}*\nالأسبوع: ${fmtS(ws)} – ${fmtS(addDays(ws, 6))}\n\n`;
-  t += recs.length ? recs.map(r => `• ${fmtDay(parse(r.date))}: ${r.type === 'hifz' ? 'حفظ' : 'مراجعة'} ${recText(r)}${r.grade ? ' — ' + r.grade : ''}`).join('\n') : 'لا يوجد تسميع هذا الأسبوع';
-  return t + `\n\n📖 حفظ: ${g.h} آية\n🔁 مراجعة: ${g.r} آية\n📅 أيام التسميع: ${g.days.size}\n\nالمعلم: ${db.me.name}`;
+  t += recs.length ? recs.map(r => `• ${fmtDay(parse(r.date))}: ${typeAr(r)} ${recText(r)}${r.grade ? ' — ' + r.grade : ''}`).join('\n') : 'لا يوجد تسميع هذا الأسبوع';
+  return t + `\n\n📖 حفظ: ${g.h} آية\n🔁 مراجعة: ${g.r} آية${g.q ? `\n📚 قراءة: ${g.q} آية` : ''}\n📅 أيام التسميع: ${g.days.size}\n\nالمعلم: ${db.me.name}`;
 }
 
 /* ---------- الإحصائيات ---------- */
@@ -416,8 +438,8 @@ function period() {
 }
 function viewStats() {
   const p = period(), recs = inRange(ymd(p.s), ymd(p.e)), g = agg(recs);
-  const per = Array.from({ length: p.days }, (_, i) => { const d = addDays(p.s, i), a = agg(recs.filter(r => r.date === ymd(d))); return { d, h: a.h, r: a.r }; });
-  const mx = Math.max(1, ...per.map(x => x.h + x.r)), dense = p.days > 7;
+  const per = Array.from({ length: p.days }, (_, i) => { const d = addDays(p.s, i), a = agg(recs.filter(r => r.date === ymd(d))); return { d, h: a.h, r: a.r, q: a.q }; });
+  const mx = Math.max(1, ...per.map(x => x.h + x.r + x.q)), dense = p.days > 7;
   const grades = GRADES.map(n => [n, recs.filter(r => r.grade === n).length]).filter(x => x[1]);
   const rows = db.students.map(s => ({ s, a: agg(recs.filter(r => r.studentId === s.id)) })).sort((x, y) => (y.a.h + y.a.r) - (x.a.h + x.a.r));
   return `
@@ -425,15 +447,15 @@ function viewStats() {
     <div class="seg" style="margin-bottom:12px"><button class="${st.mode === 'week' ? 'on' : ''}" data-act="mode" data-id="week">أسبوعي</button><button class="${st.mode === 'month' ? 'on' : ''}" data-act="mode" data-id="month">شهري</button></div>
     <div class="nav-period"><button data-act="prev">›</button><div>${p.title}<small>${p.sub}</small></div><button data-act="next" ${st.off >= 0 ? 'disabled' : ''}>‹</button></div>
     <div class="stats two" style="margin:0">
-      <div class="stat"><b>${g.h}</b><span>آيات الحفظ</span></div><div class="stat gold"><b>${g.r}</b><span>آيات المراجعة</span></div>
+      <div class="stat"><b>${g.h}</b><span>آيات الحفظ</span></div><div class="stat gold"><b>${g.r}</b><span>آيات المراجعة</span></div>${g.q ? `<div class="stat" style="grid-column:1/-1"><b style="color:#6b73d6">${g.q}</b><span>آيات القراءة (ختمات القراءات)</span></div>` : ''}
       <div class="stat blue"><b>${g.n}</b><span>عدد التسميعات</span></div><div class="stat"><b>${g.students.size}<small style="font-size:14px;color:var(--mut)">/${db.students.length}</small></b><span>الطلاب النشطون</span></div>
     </div>
   </div>
   <div class="card"><h3>📈 النشاط اليومي</h3>
-    <div class="chart ${dense ? 'dense' : ''}">${per.map(x => `<div class="col"><b>${x.h + x.r || ''}</b><div class="bars">
-      <i class="r" style="height:${x.r * 100 / mx}%"></i><i class="h" style="height:${x.h * 100 / mx}%"></i></div>
+    <div class="chart ${dense ? 'dense' : ''}">${per.map(x => `<div class="col"><b>${x.h + x.r + x.q || ''}</b><div class="bars">
+      <i class="q" style="height:${x.q * 100 / mx}%"></i><i class="r" style="height:${x.r * 100 / mx}%"></i><i class="h" style="height:${x.h * 100 / mx}%"></i></div>
       <small>${dense ? x.d.getDate() : fmtDay(x.d).replace('ال', '')}</small></div>`).join('')}</div>
-    <div class="legend"><span><i style="background:var(--g2)"></i>حفظ</span><span><i style="background:var(--gold)"></i>مراجعة</span></div></div>
+    <div class="legend"><span><i style="background:var(--g2)"></i>حفظ</span><span><i style="background:var(--gold)"></i>مراجعة</span>${recs.some(r => r.type === 'qiraa') ? '<span><i style="background:#6b73d6"></i>قراءة</span>' : ''}</div></div>
   ${grades.length ? `<div class="card"><h3>🏅 التقديرات</h3><div class="chips">${grades.map(([n, c]) => `<span class="badge ${gcls(n)}" style="font-size:14px;padding:5px 14px">${n}: ${c}</span>`).join('')}</div></div>` : ''}
   <div class="card"><h3>👥 ${staff() ? 'ترتيب الطلاب' : 'الأبناء'}</h3>${rows.length ? `<div class="tw"><table><tr><th>الطالب</th><th>حفظ</th><th>مراجعة</th><th>أيام</th></tr>
     ${rows.map(({ s, a }) => `<tr data-act="open-student" data-id="${s.id}" style="cursor:pointer"><td><b>${esc(s.name)}</b></td><td>${a.h}</td><td>${a.r}</td><td>${a.days.size}</td></tr>`).join('')}</table></div>` : empty('👥', 'لا يوجد طلاب')}</div>`;
@@ -550,7 +572,7 @@ function viewSettings() {
   <div class="card"><div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="nav" data-id="${back}">→ رجوع</button><span></span></div>
     <h3>📚 القراءات</h3>
     <label class="row" style="gap:10px;align-items:flex-start"><input type="checkbox" id="qiraatchk" style="width:auto;flex:none;margin-top:5px" ${db.me.qiraat ? 'checked' : ''}>
-      <span>أُقرئ بالقراءات العشر (الصغرى) بالإضافة إلى حفص<br><small class="hint">الأساس حفص عن عاصم. عند التفعيل يظهر اختيار الرواية في التسميع وفي بيانات الطالب. الإلغاء لا يحذف ما سُجّل.</small></span></label>
+      <span>أُقرئ بالقراءات العشر (الصغرى) بالإضافة إلى حفص<br><small class="hint">الأساس حفص عن عاصم. عند التفعيل تستطيع إضافة برامج قراءات للطلاب الحافظين من ملفهم. الإلغاء لا يحذف ما سُجّل.</small></span></label>
     <p class="hint" style="margin:10px 0 0">هذا الخيار مستقل تماماً عن كلمة المرور، ولا يتطلب أي إجراء آخر.</p></div>`;
 }
 function accountView() {
@@ -595,7 +617,7 @@ const acts = {
   nav: id => { if (id === 'add' && (!st.form || st.form.id)) st.form = newForm(''); go(id, { thread: null }); },
   showpw: () => { const p = $('#pw'); p.type = p.type === 'password' ? 'text' : 'password'; },
   close: closeModal,
-  type: id => { st.form.type = id; if (!st.form.id && st.form.sid) Object.assign(st.form, nextPos(st.form.sid, id, st.form.riwaya)); render(); },
+  type: id => { st.form.type = id; if (!st.form.id && st.form.sid) Object.assign(st.form, nextPos(st.form.sid, id, '')); render(); },
   grade: id => { st.form.grade = st.form.grade === id ? '' : id; document.querySelectorAll('#grades .chip').forEach(c => c.classList.toggle('on', c.dataset.id === st.form.grade)); },
   len: id => {
     const f = st.form, mx = Q.count(+f.surah); if (!f.from) f.from = 1;
@@ -604,7 +626,7 @@ const acts = {
   },
   'save-rec': saveRec,
   'cancel-edit': () => { st.form = newForm(''); go('home'); },
-  'edit-rec': id => { const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, riwaya: r.riwaya || 'hafs', date: r.date, surah: r.surah, from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
+  'edit-rec': id => { const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
   'del-rec': async id => { if (!confirm('حذف هذا التسميع؟')) return; await api('record_delete', { id: +id }); db.records = db.records.filter(r => r.id !== +id); render(); toast('تم الحذف'); },
   quick: id => { st.form = newForm(id); go('add'); },
   'open-student': id => go('student', { sid: +id }),
@@ -616,7 +638,16 @@ const acts = {
   mode: id => { st.mode = id; st.off = 0; render(); },
   prev: () => { st.off--; render(); },
   next: () => { if (st.off < 0) { st.off++; render(); } },
-  rv: id => { st.rv = id; render(); },
+  pe: id => { st.pe = id; render(); },
+  'enr-new': id => enrollForm(id, false),
+  'enr-prior': id => enrollForm(id, true),
+  'enr-done': async id => { const e = enrById(id); const r = await api('enrollment_save', { id: +id, studentId: e.studentId, status: 'completed', completed_at: today(), started_at: e.startedAt, shaykh: e.shaykh, note: e.note }); Object.assign(e, r.enrollment); render(); toast('🎉 سُجّل إتمام القراءة'); },
+  'enr-reopen': async id => { const e = enrById(id); const r = await api('enrollment_save', { id: +id, studentId: e.studentId, status: 'active', started_at: e.startedAt, shaykh: e.shaykh, note: e.note }); Object.assign(e, r.enrollment); render(); },
+  'enr-del': async id => { if (!confirm('حذف هذا البرنامج؟ سيُحذف تسميعه أيضاً.')) return; await api('enrollment_delete', { id: +id }); db.enrollments = db.enrollments.filter(e => e.id !== +id); db.records = db.records.filter(r => r.enrollmentId !== +id); render(); toast('تم الحذف'); },
+  'edit-hafiz': id => hafizForm(student(id)),
+  'cert-enr': (id, el) => certForm(+el.dataset.sid, +id),
+  'jam-all': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = ALL20.includes(c.value); }),
+  'jam-none': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = false; }),
   'open-report': id => go('report', { sid: +id, ro: 0 }),
   rprev: () => { st.ro--; render(); },
   rnext: () => { if (st.ro < 0) { st.ro++; render(); } },
@@ -684,8 +715,8 @@ document.addEventListener('input', e => {
   if (t.id === 'msgin') { st.draft = t.value; return; }
   if (!t.dataset.f || !st.form) return;
   st.form[t.dataset.f] = t.value;
-  if (t.dataset.f === 'sid' && !st.form.id) { st.form.riwaya = (student(t.value) || {}).riwaya || 'hafs'; Object.assign(st.form, nextPos(t.value, st.form.type, st.form.riwaya)); render(); return; }
-  if (t.dataset.f === 'riwaya') { if (!st.form.id && st.form.sid) { Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value)); render(); } return; }
+  if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
+  if (t.dataset.f === 'enr') { st.form.type = t.value ? 'qiraa' : 'hifz'; if (!st.form.id) Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value)); render(); return; }
   if (t.dataset.f === 'surah') {
     const mx = Q.count(+st.form.surah); st.form.from = 1; st.form.to = ''; st.form.hint = '';
     const fr = document.querySelector('[data-f=from]'), to = document.querySelector('[data-f=to]');
@@ -721,13 +752,26 @@ document.addEventListener('submit', run(async e => {
     st.signupDone = true; render(); return;
   }
   if (f.id === 'certform') {
-    const r = await api('cert_issue', { studentId: +f.dataset.sid, kind: f.kind.value, title: f.title.value, riwaya: f.riwaya ? f.riwaya.value : 'hafs',
+    const r = await api('cert_issue', { studentId: +f.dataset.sid, kind: f.kind.value, title: f.title.value, enrollmentId: f.enr ? +f.enr.value : null,
       period_from: f.pf.value || null, period_to: f.pt.value || null, grade: f.grade.value, note: f.note.value, date: f.date.value });
     db.certs.unshift(r.cert); closeModal(); go('cert', { cid: r.cert.id }); toast('تم إصدار الشهادة ✔'); return;
   }
+  if (f.id === 'enrform') {
+    const kind = f.kind.value; let keys;
+    if (kind === 'riwaya') keys = [f.riwaya.value]; else if (kind === 'qiraa') keys = qariRawis(f.qari.value); else keys = [...f.querySelectorAll('[name=jam]:checked')].map(x => x.value);
+    if (kind === 'jam' && keys.length < 2) return toast('اختر روايتين على الأقل للجمع');
+    const r = await api('enrollment_save', { studentId: +f.dataset.sid, kind, riwayat: keys, label: enrLabel(kind, keys), prior: f.dataset.prior === '1',
+      started_at: f.sd ? f.sd.value : null, completed_at: f.cd ? f.cd.value : null, shaykh: f.shaykh ? f.shaykh.value : '', note: f.note.value });
+    db.enrollments.push(r.enrollment); closeModal(); st.pe = r.enrollment.prior ? st.pe : String(r.enrollment.id); render(); toast('تمت الإضافة ✔'); return;
+  }
+  if (f.id === 'hafform') {
+    await api('student_hafiz', { id: +f.dataset.sid, hafiz: f.hafiz.checked, where: f.where.value, note: f.note.value });
+    Object.assign(student(f.dataset.sid), { hafiz: f.hafiz.checked, hafizWhere: f.where.value, hafizNote: f.note.value }); closeModal(); render(); toast('تم الحفظ ✔'); return;
+  }
   if (f.id === 'stform') {
     const r = await api('student_save', {
-      id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_id: +f.teacher.value || 0, group: f.group.value, riwaya: f.riwaya ? f.riwaya.value : 'hafs',
+      id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_id: +f.teacher.value || 0, group: f.group.value, program: f.program.value, hafiz: f.hafiz.checked || f.program.value === 'qiraat', hafiz_where: f.hafwhere.value, hafiz_note: f.hafnote.value,
+      prior_list: [...f.querySelectorAll('[name=prk]:checked')].map(x => ({ kind: 'riwaya', riwayat: [x.value], label: RW[x.value].label })), prior_where: f.prior_where ? f.prior_where.value : '',
       parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value
     });
     await refresh(); closeModal(); render(); toast('تم الحفظ ✔');
@@ -751,8 +795,9 @@ document.addEventListener('change', run(async e => {
   const t = e.target;
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
-  if (t.id === 'rwdefault') { await api('student_riwaya', { id: +t.dataset.id, riwaya: t.value }); student(t.dataset.id).riwaya = t.value; st.rv = t.value; render(); toast('تم الحفظ ✔'); }
-  if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
+  if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
+  if (t.id === 'en_kind') { $('#en_riwaya').style.display = t.value === 'riwaya' ? '' : 'none'; $('#en_qiraa').style.display = t.value === 'qiraa' ? '' : 'none'; $('#en_jam').style.display = t.value === 'jam' ? '' : 'none'; }
+  if (t.id === 'st_program' && t.value === 'qiraat') $('#st_hafiz').checked = true;
   if (t.id === 'mschool') { st.mschool = t.value; render(); }
   if (t.id === 'sfrom' || t.id === 'sto') { st[t.id] = t.value; render(); }
   if (t.id === 'su_role') suToggle(t.value);

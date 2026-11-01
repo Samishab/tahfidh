@@ -245,3 +245,10 @@ td:first-child,th:first-child{text-align:start}
 .ct-seal b{font-size:13px;color:#0b5d45}.ct-seal small{font-size:11px;color:#8a6200}
 .ct-serial{font-size:12px;color:#6b7d75;margin-top:10px}
 @media print{.rpt.cert{width:297mm!important;height:209mm!important}.rpt.flow{height:auto!important;min-height:296mm!important}}
+
+/* ===== برامج القراءات ===== */
+.chart .q{background:linear-gradient(#8b92e8,#6b73d6)}
+.rp-tbl em.q{background:#ece9ff;color:#4a3fb0}
+.jamgrid{max-height:240px;overflow:auto;border:1.5px solid var(--line);border-radius:13px;padding:6px 10px;background:#fff}
+.jamgrid label{display:inline-flex;align-items:center;gap:4px;margin-inline-end:12px;font-size:14px}
+.jamgrid input{width:auto}

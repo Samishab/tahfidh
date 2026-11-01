@@ -3,10 +3,10 @@
 /* ---------- الشهادة (A4 أفقي) ---------- */
 function certSheet(c) {
   const d = parse(c.date), url = appUrl() + '?verify=' + c.serial;
-  const rwTxt = c.riwaya && RW[c.riwaya] ? RW[c.riwaya].label : 'حفص عن عاصم';
   const grade = c.grade ? ` بتقدير <b>${esc(c.grade)}</b>` : '';
   let body;
-  if (c.kind === 'khatm') body = `قد أتمّ حفظ القرآن الكريم كاملاً برواية <b>${esc(rwTxt)}</b>${grade}، نسأل الله أن ينفعه بما حفظ ويجعله من أهل القرآن.`;
+  if (c.kind === 'khatm') body = `قد أتمّ حفظ القرآن الكريم كاملاً${grade}، نسأل الله أن ينفعه بما حفظ ويجعله من أهل القرآن.`;
+  else if (c.kind === 'qiraat') body = `قد أتمّ قراءة القرآن الكريم ختمةً كاملةً بـ <b>${esc(c.label)}</b>${grade}، نسأل الله أن ينفعه بما قرأ ويجعله من أهل القرآن.`;
   else if (c.kind === 'period') body = `وذلك عن الفترة من <b>${fmtG(parse(c.from))}</b> إلى <b>${fmtG(parse(c.to))}</b>${grade}، تقديراً لجهده واجتهاده في الحفظ والمراجعة.`;
   else body = esc(c.note) || `تقديراً لجهده واجتهاده${grade}.`;
   const extra = c.kind !== 'custom' && c.note ? `<p class="ct-extra">${esc(c.note)}</p>` : '';
@@ -34,39 +34,40 @@ function viewCert() {
     <p class="hint" style="margin:8px 0 0">الشهادة بحجم A4 أفقي. اختر «حفظ بتنسيق PDF» من نافذة الطباعة.</p></div>
   <div class="rptwrap" id="rptwrap"><div class="rpt cert" id="rpt" data-w="1123" data-h="794">${certSheet(c)}</div></div>`;
 }
-function certForm(sid) {
-  const s = student(sid);
+function certForm(sid, enrId) {
+  const s = student(sid), doneE = enrOf(s.id).filter(e => e.status === 'completed');
   modal(`<h2>🏆 إصدار شهادة — ${esc(s.name)}</h2>
   <form id="certform" class="gap" data-sid="${s.id}">
-    <div><label class="f">نوع الشهادة</label><select name="kind" id="cf_kind"><option value="khatm">ختم حفظ المصحف كاملاً</option><option value="period">شهادة فترة (تفوق / إنجاز)</option><option value="custom">شهادة مخصصة</option></select></div>
+    <div><label class="f">نوع الشهادة</label><select name="kind" id="cf_kind"><option value="khatm">ختم حفظ المصحف كاملاً</option><option value="qiraat">إتمام ختمة قراءات</option><option value="period">شهادة فترة (تفوق / إنجاز)</option><option value="custom">شهادة مخصصة</option></select></div>
     <div><label class="f">عنوان الشهادة <span class="hint">(اتركه فارغاً للعنوان الافتراضي)</span></label><input name="title" id="cf_title" maxlength="160" placeholder="شهادة ختم حفظ القرآن الكريم"></div>
-    ${qiraatOn() || s.riwaya !== 'hafs' ? `<div><label class="f">الرواية</label><select name="riwaya">${rwOptions(s.riwaya || 'hafs')}</select></div>` : ''}
+    <div id="cf_enr" style="display:none"><label class="f">الختمة المنجزة</label>${doneE.length ? `<select name="enr">${doneE.map(e => `<option value="${e.id}" ${+enrId === e.id ? 'selected' : ''}>${esc(e.label)}</option>`).join('')}</select>` : '<p class="hint">لا توجد ختمة منجزة بعد.</p>'}</div>
     <div id="cf_period" class="row" style="display:none"><div><label class="f">من</label><input type="date" name="pf"></div><div><label class="f">إلى</label><input type="date" name="pt"></div></div>
     <div><label class="f">التقدير <span class="hint">(اختياري)</span></label><select name="grade"><option value="">—</option>${GRADES.map(g => `<option>${g}</option>`).join('')}</select></div>
     <div><label class="f">نص إضافي <span class="hint">(اختياري)</span></label><textarea name="note" maxlength="300" placeholder="عبارة تقدير أو ملاحظة تظهر في الشهادة"></textarea></div>
     <div><label class="f">تاريخ الإصدار</label><input type="date" name="date" value="${today()}" max="${today()}"></div>
     <button class="btn block gold">إصدار الشهادة</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
   </form>`);
+  if (enrId) { $('#cf_kind').value = 'qiraat'; $('#cf_enr').style.display = ''; $('#cf_title').placeholder = certDefaultTitle('qiraat'); }
 }
-const certDefaultTitle = k => k === 'khatm' ? 'شهادة ختم حفظ القرآن الكريم' : k === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
+const certDefaultTitle = k => k === 'qiraat' ? 'شهادة إتمام قراءة ختمة كاملة' : k === 'khatm' ? 'شهادة ختم حفظ القرآن الكريم' : k === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
 
 /* ---------- الكشف الشهري للحلقة ---------- */
 function monthlyData(off, school) {
   const m = monthRange(off), a = ymd(m.s), b = ymd(m.e);
   const studs = db.students.filter(s => !school || s.school_id === +school), ids = new Set(studs.map(s => s.id));
   const recs = db.records.filter(r => ids.has(r.studentId) && r.date >= a && r.date <= b), g = agg(recs);
-  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), y = agg(recs.filter(r => r.date === dt)); return { h: y.h, r: y.r }; });
+  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), y = agg(recs.filter(r => r.date === dt)); return { h: y.h, r: y.r, q: y.q }; });
   const rows = studs.map(s => {
     const rs = recs.filter(r => r.studentId === s.id), y = agg(rs), gs = rs.filter(r => r.grade);
     const avg = gs.length ? gs.reduce((t, r) => t + GP[r.grade], 0) / gs.length : 0;
-    return { s, x: y, avg: gs.length ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—', last: lastOf(s.id, 'hifz', s.riwaya || 'hafs') };
+    return { s, x: y, avg: gs.length ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—', last: lastOf(s.id, 'hifz') };
   }).sort((p, q) => (q.x.h + q.x.r) - (p.x.h + p.x.r));
   return { m, studs, g, per, rows, inactive: rows.filter(r => !r.x.n).length, top: rows.filter(r => r.x.n).slice(0, 3) };
 }
 function monthlyCsv() {
   const { m, rows } = monthlyData(st.mo, st.mschool);
-  downloadCsv(`كشف-${m.label}`, [['الطالب', 'آيات الحفظ', 'آيات المراجعة', 'عدد التسميعات', 'أيام التسميع', 'متوسط التقدير', 'آخر موضع حفظ']]
-    .concat(rows.map(r => [r.s.name, r.x.h, r.x.r, r.x.n, r.x.days.size, r.avg, r.last ? `${Q.name(r.last.surah)} ${r.last.to}` : ''])));
+  downloadCsv(`كشف-${m.label}`, [['الطالب', 'آيات الحفظ', 'آيات المراجعة', 'آيات القراءة', 'عدد التسميعات', 'أيام التسميع', 'متوسط التقدير', 'آخر موضع حفظ']]
+    .concat(rows.map(r => [r.s.name, r.x.h, r.x.r, r.x.q, r.x.n, r.x.days.size, r.avg, r.last ? `${Q.name(r.last.surah)} ${r.last.to}` : ''])));
 }
 function monthlySheet(off, school) {
   const { m, studs, g, per, rows, inactive, top } = monthlyData(off, school);
@@ -85,8 +86,8 @@ function monthlySheet(off, school) {
     <div class="rp-box"><h3>🌟 المتميزون</h3>${top.length ? top.map((t, i) => `<div class="rp-top"><span>${['🥇', '🥈', '🥉'][i]}</span><b>${esc(t.s.name)}</b><small>${t.x.h + t.x.r} آية</small></div>`).join('') : '<p class="rp-cap">لا يوجد تسميع</p>'}</div>
   </div>
   <div class="rp-box rp-tbl"><h3>📋 كشف الطلاب <span>${studs.length} طالب</span></h3>
-    ${rows.length ? `<table><tr><th>#</th><th style="text-align:start">الطالب</th><th>حفظ</th><th>مراجعة</th><th>تسميعات</th><th>أيام</th><th>التقدير</th><th style="text-align:start">آخر موضع حفظ</th></tr>
-    ${rows.map((r, i) => `<tr><td>${i + 1}</td><td style="text-align:start"><b>${esc(r.s.name)}</b></td><td>${r.x.h}</td><td>${r.x.r}</td><td>${r.x.n}</td><td>${r.x.days.size}</td><td>${r.avg}</td>
+    ${rows.length ? `<table><tr><th>#</th><th style="text-align:start">الطالب</th><th>حفظ</th><th>مراجعة</th><th>قراءة</th><th>تسميعات</th><th>أيام</th><th>التقدير</th><th style="text-align:start">آخر موضع حفظ</th></tr>
+    ${rows.map((r, i) => `<tr><td>${i + 1}</td><td style="text-align:start"><b>${esc(r.s.name)}</b></td><td>${r.x.h}</td><td>${r.x.r}</td><td>${r.x.q || '—'}</td><td>${r.x.n}</td><td>${r.x.days.size}</td><td>${r.avg}</td>
       <td style="text-align:start"><small>${r.last ? Q.name(r.last.surah) + ' ' + r.last.to : '—'}</small></td></tr>`).join('')}</table>` : '<p class="rp-cap">لا يوجد طلاب</p>'}</div>
   <div class="rp-ft"><div><span></span>المعلم</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>إدارة المدرسة</div></div>
   <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brand().name)}</div>`;
@@ -111,7 +112,7 @@ function renderVerify() {
     <div class="card">${!v.res ? '<div class="empty"><span class="ico">⏳</span>جارٍ التحقق...</div>' : c ? `
       <div class="info">✅ شهادة صحيحة</div>
       <div class="creds" style="margin-top:12px"><div><small>الطالب</small><b>${esc(c.student)}</b></div><div><small>الشهادة</small><b>${esc(c.title)}</b></div>
-        <div><small>الجهة</small><b>${esc(c.school)}</b></div>${c.kind === 'khatm' ? `<div><small>الرواية</small><b>${esc((RW[c.riwaya] || { label: 'حفص عن عاصم' }).label)}</b></div>` : ''}
+        <div><small>الجهة</small><b>${esc(c.school)}</b></div>${c.kind === 'qiraat' ? `<div><small>القراءة</small><b>${esc(c.label)}</b></div>` : ''}
         <div><small>تاريخ الإصدار</small><b>${fmtG(parse(c.date))}</b></div><div><small>المصدر</small><b>${esc(c.issuer)}</b></div></div>`
       : '<div class="info err">❌ لا توجد شهادة بهذا الرقم، تأكد من الرقم وحاول مجدداً.</div>'}
       <button class="btn block ghost" style="margin-top:12px" data-act="to-login">دخول النظام</button></div></div>`;
@@ -140,8 +141,8 @@ function stmtData(s) {
 }
 function stmtCsv() {
   const s = student(st.sid), { r, recs } = stmtData(s);
-  downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'السورة', 'من آية', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'الرواية', 'ملاحظة']]
-    .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), x.type === 'hifz' ? 'حفظ' : 'مراجعة', Q.name(x.surah), x.from, x.to, ayahs(x), Q.juz(x.surah, x.from, x.to).join('-'), x.grade || '', (RW[x.riwaya] || RW.hafs).label, x.note || ''])));
+  downloadCsv(`كشف-تسميع-${s.name}`, [['التاريخ', 'اليوم', 'النوع', 'السورة', 'من آية', 'إلى آية', 'عدد الآيات', 'الجزء', 'التقدير', 'البرنامج / القراءة', 'ملاحظة']]
+    .concat(recs.map(x => [x.date, fmtDay(parse(x.date)), typeAr(x), Q.name(x.surah), x.from, x.to, ayahs(x), Q.juz(x.surah, x.from, x.to).join('-'), x.grade || '', (x.enrollmentId && enrById(x.enrollmentId) ? enrById(x.enrollmentId).label : ''), x.note || ''])));
 }
 function statementSheet(s) {
   const { r, recs } = stmtData(s), g = agg(recs), t = userById(s.teacher_id);
@@ -152,12 +153,12 @@ function statementSheet(s) {
     <div class="rp-month"><b style="font-size:15px">${esc(r.label)}</b></div></div>
   <div class="rp-st"><div class="rp-av">${initial(s.name)}</div>
     <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</p></div></div>
-  <div class="rp-kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🗓', g.days.size, 'أيام التسميع', '#3b7ddd')}</div>
+  <div class="rp-kpis" style="grid-template-columns:repeat(${g.q ? 5 : 4},1fr)">${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : ''}${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🗓', g.days.size, 'أيام التسميع', '#3b7ddd')}</div>
   <div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>${recs.length} تسميع</span></h3>
     ${recs.length ? `<table><tr><th>#</th><th>التاريخ</th><th>النوع</th><th style="text-align:start">السورة والآيات</th><th>الجزء</th><th>التقدير</th><th style="text-align:start">ملاحظة</th></tr>
       ${recs.map((x, i) => { const d = parse(x.date); return `<tr><td>${i + 1}</td><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}</td>
-        <td><em class="${x.type === 'hifz' ? 'h' : 'r'}">${x.type === 'hifz' ? 'حفظ' : 'مراجعة'}</em></td>
-        <td style="text-align:start"><b>${Q.name(x.surah)}</b> ${x.from}–${x.to} <small>(${ayahs(x)})${x.riwaya && x.riwaya !== 'hafs' ? ' • ' + RW[x.riwaya].short : ''}</small></td>
+        <td><em class="${typeCls(x)}">${typeAr(x)}</em></td>
+        <td style="text-align:start"><b>${Q.name(x.surah)}</b> ${x.from}–${x.to} <small>(${ayahs(x)})${x.enrollmentId && enrById(x.enrollmentId) ? ' • ' + esc(enrById(x.enrollmentId).label) : ''}</small></td>
         <td>${Q.juz(x.surah, x.from, x.to).join('–')}</td><td>${x.grade || '—'}</td><td style="text-align:start"><small>${esc(x.note)}</small></td></tr>`; }).join('')}</table>`
       : '<p class="rp-cap" style="padding:16px 0">لا يوجد تسميع في هذه الفترة</p>'}</div>
   <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div class="rp-verse">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><div><span></span>ولي الأمر</div></div>
@@ -175,4 +176,57 @@ function viewStatement() {
     <div class="row"><button class="btn gold" data-act="print">🖨 طباعة / PDF</button><button class="btn ghost" data-act="csv-stmt">⬇ Excel</button><button class="btn light auto" data-act="rback">رجوع</button></div>
   </div>
   <div class="rptwrap" id="rptwrap"><div class="rpt flow" id="rpt">${statementSheet(s)}</div></div>`;
+}
+
+/* ---------- البرامج: حفظ ومراجعة / قراءات ---------- */
+const canQiraat = s => staff() && (!!db.me.qiraat || (isMgr() && !!(userById(s.teacher_id) || {}).qiraat));
+function readingsDone(sid) {
+  const done = new Set();
+  enrOf(sid).filter(e => e.status === 'completed').forEach(e => e.riwayat.forEach(k => done.add(k)));
+  const rows = QURRA.map(([k, qn, rs]) => { const own = rs.filter(r => r[0] !== 'hafs_qasr').map(r => r[0]); return { k, qn, n: own.filter(x => done.has(x)).length, tot: own.length }; });
+  return { rows, qurra: rows.filter(r => r.n === r.tot).length, riwayat: ALL20.filter(k => done.has(k)).length };
+}
+function progCard(s) {
+  const es = enrOf(s.id), act = es.filter(e => e.status === 'active' && !e.prior), dn = es.filter(e => e.status === 'completed'), can = canQiraat(s);
+  if (!(s.hafiz || es.length || s.program === 'qiraat' || (staff() && can))) return '';
+  const rd = readingsDone(s.id);
+  const row = e => `<div class="item" style="cursor:default"><div class="avatar">${e.status === 'completed' ? '✅' : '📚'}</div>
+    <div class="t"><b>${esc(e.label)}</b><small>${e.status === 'completed' ? 'أتمّها' + (e.completedAt ? ' ' + fmtG(parse(e.completedAt)) : '') + (e.prior ? ' • قبل الالتحاق' : '') + (e.shaykh ? ' • ' + esc(e.shaykh) : '') : 'جارية' + (e.startedAt ? ' منذ ' + fmtG(parse(e.startedAt)) : '')}${e.note ? ' • ' + esc(e.note) : ''}</small></div>
+    ${staff() ? `<div class="side">${e.status === 'active' ? `<button class="btn light sm" data-act="enr-done" data-id="${e.id}">أتمّها</button>` : `<button class="btn light sm" data-act="enr-reopen" data-id="${e.id}">إعادة فتح</button>`}<button class="btn red sm" data-act="enr-del" data-id="${e.id}" style="margin-top:4px">حذف</button></div>` : ''}</div>`;
+  return `<div class="card"><h3>🎓 البرنامج والقراءات ${staff() ? `<button class="more" data-act="edit-hafiz" data-id="${s.id}">✏️ بيانات الحفظ</button>` : ''}</h3>
+    <p class="hint" style="margin:0 0 8px">البرنامج: <b>${s.program === 'qiraat' ? '📚 قراءات' : '📖 حفظ ومراجعة'}</b></p>
+    ${s.hafiz ? `<div class="info" style="text-align:start;margin-bottom:10px">✅ حافظ للمصحف${s.hafizWhere ? ' — أتمّه: ' + esc(s.hafizWhere) : ''}${s.hafizNote ? `<br><small>${esc(s.hafizNote)}</small>` : ''}</div>` : ''}
+    ${staff() && can ? `<div class="row" style="margin-bottom:10px"><button class="btn gold sm" data-act="enr-new" data-id="${s.id}">＋ برنامج قراءة</button><button class="btn ghost sm" data-act="enr-prior" data-id="${s.id}">＋ قراءة سابقة</button></div>` : (staff() ? '<p class="hint">لإضافة برنامج قراءات يفعّل المعلم «إعدادات القراءات» من حسابه.</p>' : '')}
+    ${act.length ? `<h3 style="font-size:14px;margin:6px 0">البرامج الجارية</h3><div class="list" style="margin-bottom:10px">${act.map(row).join('')}</div>` : ''}
+    ${dn.length ? `<h3 style="font-size:14px;margin:6px 0">✅ القراءات المنجزة (${dn.length})</h3><div class="list" style="margin-bottom:10px">${dn.map(row).join('')}</div>
+      <div class="info" style="text-align:start"><b>🏅 أتمّ ${rd.qurra} من 10 قراء • ${rd.riwayat} من 20 رواية</b>
+      <div class="chips" style="margin-top:8px">${rd.rows.map(r => `<span class="chip static ${r.n === r.tot ? 'on' : ''}" style="${r.n && r.n < r.tot ? 'border-color:var(--gold)' : ''}">${r.qn}${r.n && r.n < r.tot ? ' ½' : ''}</span>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+function enrollForm(sid, prior) {
+  const s = student(sid);
+  modal(`<h2>${prior ? '＋ قراءة سابقة منجزة' : '＋ برنامج قراءة'} — ${esc(s.name)}</h2>
+  <form id="enrform" class="gap" data-sid="${s.id}" data-prior="${prior ? 1 : 0}">
+    <div><label class="f">نوع القراءة</label><select name="kind" id="en_kind">
+      <option value="riwaya">رواية واحدة (مثل: ورش عن نافع، حفص بقصر المنفصل)</option>
+      <option value="qiraa">قراءة كاملة لقارئ (برواتيه)</option>
+      <option value="jam">جمع بين عدة قراءات / روايات</option></select></div>
+    <div id="en_riwaya"><label class="f">الرواية</label><select name="riwaya">${rwOptions('warsh')}</select></div>
+    <div id="en_qiraa" style="display:none"><label class="f">القارئ</label><select name="qari">${QURRA.map(([k, qn]) => `<option value="${k}">${qn}</option>`).join('')}</select></div>
+    <div id="en_jam" style="display:none"><label class="f">اختر ما جُمع</label>
+      <div class="row" style="margin-bottom:8px"><button type="button" class="btn ghost sm" data-act="jam-all">⭐ الجمع بين العشر (كلها)</button><button type="button" class="btn light sm" data-act="jam-none">مسح</button></div>
+      <div class="jamgrid">${QURRA.map(([, qn, rs]) => `<div style="padding:3px 0"><b style="color:var(--g1);font-size:13px">${qn}</b> ${rs.map(([k, n]) => `<label><input type="checkbox" name="jam" value="${k}"> ${n}</label>`).join('')}</div>`).join('')}</div></div>
+    ${prior ? `<div><label class="f">تاريخ الإتمام <span class="hint">(اختياري)</span></label><input type="date" name="cd" max="${today()}"></div>
+      <div><label class="f">أين / عند من أتمّها <span class="hint">(اختياري)</span></label><input name="shaykh" maxlength="160" placeholder="اسم الشيخ أو الجهة"></div>`
+      : `<div><label class="f">تاريخ البدء</label><input type="date" name="sd" value="${today()}" max="${today()}"></div>`}
+    <div><label class="f">ملاحظات <span class="hint">(اختياري)</span></label><textarea name="note" maxlength="300" placeholder="سند، إجازة، تفاصيل..."></textarea></div>
+    <button class="btn block gold">حفظ</button><button type="button" class="btn light block" data-act="close">إلغاء</button></form>`);
+}
+function hafizForm(s) {
+  modal(`<h2>✅ بيانات حفظ المصحف — ${esc(s.name)}</h2>
+  <form id="hafform" class="gap" data-sid="${s.id}">
+    <label class="row" style="gap:8px"><input type="checkbox" name="hafiz" style="width:auto;flex:none" ${s.hafiz ? 'checked' : ''}> أتمّ حفظ المصحف كاملاً</label>
+    <div><label class="f">أين أتمّه؟ <span class="hint">(اختياري)</span></label><input name="where" maxlength="160" value="${esc(s.hafizWhere)}" placeholder="الحلقة / المدرسة / السنة"></div>
+    <div><label class="f">ملاحظات <span class="hint">(اختياري)</span></label><textarea name="note" maxlength="300">${esc(s.hafizNote)}</textarea></div>
+    <button class="btn block">حفظ</button><button type="button" class="btn light block" data-act="close">إلغاء</button></form>`);
 }

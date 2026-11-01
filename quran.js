@@ -47,7 +47,7 @@ const QURRA = [
   ['ibnkathir', 'ابن كثير', [['bazzi', 'البزي'], ['qunbul', 'قنبل']]],
   ['abuamr', 'أبو عمرو', [['duri_a', 'الدوري'], ['susi', 'السوسي']]],
   ['ibnamir', 'ابن عامر', [['hisham', 'هشام'], ['zakwan', 'ابن ذكوان']]],
-  ['asim', 'عاصم', [['shuba', 'شعبة'], ['hafs', 'حفص']]],
+  ['asim', 'عاصم', [['shuba', 'شعبة'], ['hafs', 'حفص'], ['hafs_qasr', 'حفص بقصر المنفصل']]],
   ['hamza', 'حمزة', [['khalaf_h', 'خلف'], ['khallad', 'خلاد']]],
   ['kisai', 'الكسائي', [['abulharith', 'أبو الحارث'], ['duri_k', 'الدوري']]],
   ['abujaafar', 'أبو جعفر', [['wardan', 'ابن وردان'], ['jammaz', 'ابن جماز']]],
@@ -56,3 +56,14 @@ const QURRA = [
 ];
 const RW = {};
 QURRA.forEach(([, qn, rs]) => rs.forEach(([k, n]) => { RW[k] = { k, label: `${n} عن ${qn}`, short: `${n} (${qn})` }; }));
+
+// الروايات العشرون الأصلية (بدون حفص بقصر المنفصل)، وتسمية البرامج
+const ALL20 = [];
+QURRA.forEach(([, , rs]) => rs.forEach(([k]) => { if (k !== 'hafs_qasr') ALL20.push(k); }));
+const qariRawis = qk => ((QURRA.find(x => x[0] === qk) || [0, 0, []])[2]).filter(r => r[0] !== 'hafs_qasr').map(r => r[0]);
+function enrLabel(kind, keys) {
+  if (kind === 'riwaya') return RW[keys[0]].label;
+  if (kind === 'qiraa') { const qr = QURRA.find(x => x[2].some(r => r[0] === keys[0])); return `قراءة ${qr[1]} (${keys.map(k => RW[k].short.split(' (')[0]).join(' وَ ')})`; }
+  if (ALL20.every(k => keys.includes(k))) return 'الجمع بين القراءات العشر';
+  return 'جمع: ' + keys.map(k => RW[k].label).join(' + ');
+}
