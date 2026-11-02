@@ -69,8 +69,8 @@ function agg(recs) {
 const enrOf = sid => db.enrollments.filter(e => e.studentId === +sid);
 const enrById = id => db.enrollments.find(e => e.id === +id);
 const activeEnr = sid => enrOf(sid).filter(e => e.status === 'active' && !e.prior);
-function lastOf(sid, type, enr) {
-  return db.records.filter(r => r.studentId === +sid && r.type === type && (enr ? r.enrollmentId === +enr : !r.enrollmentId))
+function lastOf(sid, type, enr, until) {
+  return db.records.filter(r => r.studentId === +sid && r.type === type && (!until || r.date <= until) && (enr ? r.enrollmentId === +enr : !r.enrollmentId))
     .sort((a, b) => (a.date + String(a.id).padStart(9, '0')).localeCompare(b.date + String(b.id).padStart(9, '0'))).pop();
 }
 function nextPos(sid, type, enr) {

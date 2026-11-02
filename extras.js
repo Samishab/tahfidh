@@ -60,7 +60,7 @@ function monthlyData(off, school) {
   const rows = studs.map(s => {
     const rs = recs.filter(r => r.studentId === s.id), y = agg(rs), gs = rs.filter(r => r.grade);
     const avg = gs.length ? gs.reduce((t, r) => t + GP[r.grade], 0) / gs.length : 0;
-    return { s, x: y, avg: gs.length ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—', last: lastOf(s.id, 'hifz') };
+    return { s, x: y, avg: gs.length ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—', last: lastOf(s.id, 'hifz', null, b) };
   }).sort((p, q) => (q.x.h + q.x.r) - (p.x.h + p.x.r));
   return { m, studs, g, per, rows, inactive: rows.filter(r => !r.x.n).length, top: rows.filter(r => r.x.n).slice(0, 3) };
 }

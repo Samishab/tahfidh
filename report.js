@@ -54,7 +54,7 @@ function reportSheet(s, off, rg) {
   const avg = graded ? gr.reduce((x, [n, c]) => x + GP[n] * c, 0) / graded : 0;
   const avgLbl = graded ? GRADES[Math.max(0, Math.min(4, Math.round(5 - avg)))] : '—';
   const days = g.days.size, att = Math.round(days * 100 / m.days);
-  const t = tObj(s), lastH = lastOf(s.id, 'hifz');
+  const t = tObj(s), lastH = lastOf(s.id, 'hifz', null, ymd(m.e));
   const notes = recs.filter(r => r.note).slice(-2);
   const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
   const mx = Math.max(1, ...gr.map(x => x[1]));
