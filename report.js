@@ -39,11 +39,11 @@ function svgBars(per) {
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none">${g}</svg>`;
 }
 
-function reportSheet(s, off) {
-  const m = monthRange(off), a = ymd(m.s), b = ymd(m.e);
+function reportSheet(s, off, rg) {
+  const m = rg ? (() => { const s0 = parse(rg.a), e0 = parse(rg.b); return { s: s0, e: e0, days: Math.round((e0 - s0) / 864e5) + 1, label: rg.label }; })() : monthRange(off), a = ymd(m.s), b = ymd(m.e);
   const recs = db.records.filter(r => r.studentId === s.id && r.date >= a && r.date <= b).sort((x, y) => x.date.localeCompare(y.date) || x.id - y.id);
   const g = agg(recs);
-  const per = Array.from({ length: m.days }, (_, i) => { const dt = ymd(addDays(m.s, i)), x = agg(recs.filter(r => r.date === dt)); return { h: x.h, r: x.r, q: x.q }; });
+  const wk = m.days > 45, per = Array.from({ length: wk ? Math.ceil(m.days / 7) : m.days }, (_, i) => { const d0 = ymd(addDays(m.s, wk ? i * 7 : i)), d1 = wk ? ymd(addDays(m.s, i * 7 + 6)) : d0, x = agg(recs.filter(r => r.date >= d0 && r.date <= d1)); return { h: x.h, r: x.r, q: x.q }; });
   const mem = memorized(s.id), total = mem.reduce((x, y) => x + y, 0), pct = total * 100 / Q.TOTAL;
   const juz = Array.from({ length: 30 }, (_, i) => {
     const st0 = Q.juzAbs[i], e = (Q.juzAbs[i + 1] || Q.TOTAL + 1) - 1; let c = 0;
@@ -63,7 +63,7 @@ function reportSheet(s, off) {
   return `
   <div class="rp-hd"><div class="rp-pat"></div>
     <img src="${esc(brandFor(s.school_id).logo) || 'icon.svg'}" class="rp-logo" alt="">
-    <div class="rp-hd-t"><div class="rp-hv">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><small>التقرير الشهري للحفظ والمراجعة</small><h1>${esc(brandFor(s.school_id).name)}</h1></div>
+    <div class="rp-hd-t"><div class="rp-hv">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><small>${rg ? 'كشف التسميع' : 'التقرير الشهري للحفظ والمراجعة'}</small><h1>${esc(brandFor(s.school_id).name)}</h1></div>
     <div class="rp-month"><b>${m.label}</b><small>${fmtH(m.s)} – ${fmtH(m.e)}</small></div></div>
 
   <div class="rp-st">
@@ -77,7 +77,7 @@ function reportSheet(s, off) {
     ${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🏅', avgLbl, 'متوسط التقدير', '#12a150')}</div>
 
   <div class="rp-row">
-    <div class="rp-box rp-w2"><h3>📈 النشاط اليومي <span><i style="background:#14956b"></i>حفظ <i style="background:#d4a437"></i>مراجعة</span></h3><div class="rp-chart">${svgBars(per)}</div></div>
+    <div class="rp-box rp-w2"><h3>📈 ${wk ? 'النشاط الأسبوعي' : 'النشاط اليومي'} <span><i style="background:#14956b"></i>حفظ <i style="background:#d4a437"></i>مراجعة</span></h3><div class="rp-chart">${svgBars(per)}</div></div>
     <div class="rp-box"><h3>⚖️ توزيع الجهد</h3><div class="rp-donut">${svgDonut(g.h, g.r)}</div>
       <p class="rp-cap"><i style="background:#14956b"></i>حفظ ${g.h} &nbsp; <i style="background:#d4a437"></i>مراجعة ${g.r}</p></div>
   </div>

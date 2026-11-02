@@ -147,18 +147,10 @@ function stmtCsv() {
 }
 const stmtTables = recs => rptTables(recs);
 function statementSheet(s) {
-  const { r, recs } = stmtData(s), g = agg(recs), t = tObj(s);
-  const kpi = (ic, v, l, c) => `<div class="rp-k" style="--c:${c}"><i>${ic}</i><b>${v}</b><span>${l}</span></div>`;
-  return `
-  <div class="rp-hd"><div class="rp-pat"></div><img src="${esc(brandFor(s.school_id).logo) || 'icon.svg'}" class="rp-logo" alt="">
-    <div class="rp-hd-t"><div class="rp-hv">﴿ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا ﴾</div><small>كشف التسميع</small><h1>${esc(brandFor(s.school_id).name)}</h1></div>
-    <div class="rp-month"><b style="font-size:15px">${esc(r.label)}</b></div></div>
-  <div class="rp-st"><div class="rp-av">${initial(s.name)}</div>
-    <div class="rp-st-t"><h2>${esc(s.name)}</h2><p>${[schoolName(s.school_id), s.group, t ? 'المعلم: ' + t.name : ''].filter(Boolean).map(esc).join(' • ')}</p></div></div>
-  <div class="rp-kpis" style="grid-template-columns:repeat(${g.q ? 5 : 4},1fr)">${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : ''}${kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🗓', g.days.size, 'أيام التسميع', '#3b7ddd')}</div>
-  ${recs.length ? stmtTables(recs) : '<div class="rp-box rp-tbl"><h3>📋 تفاصيل التسميع <span>0 تسميع</span></h3><p class="rp-cap" style="padding:16px 0">لا يوجد تسميع في هذه الفترة</p></div>'}
-  <div class="rp-ft"><div><span></span>المعلم${t ? ': ' + esc(t.name) : ''}</div><div><span></span>ولي الأمر</div></div>
-  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(brandFor(s.school_id).name)}</div>`;
+  const { r, recs } = stmtData(s);
+  let a = r.a, b = r.b;
+  if (a < '1000') { a = recs.length ? recs[0].date : today(); b = recs.length ? recs[recs.length - 1].date : today(); }
+  return reportSheet(s, 0, { a, b, label: r.label });
 }
 function viewStatement() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
