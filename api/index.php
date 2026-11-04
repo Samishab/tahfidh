@@ -273,8 +273,14 @@ try {
         q('DELETE FROM login_attempts WHERE at < NOW() - INTERVAL 1 DAY');
         $n = (int)q("SELECT COUNT(*) FROM login_attempts WHERE at > NOW() - INTERVAL 15 MINUTE AND (ip=? OR username=?) AND username NOT IN ('otp','verify')", [ip(), $name])->fetchColumn();
         if ($n >= 8) fail('محاولات كثيرة، حاول بعد 15 دقيقة', 429);
-        $u = q('SELECT * FROM users WHERE username=? OR email=?', [$name, $name])->fetch();
-        $ok = password_verify($pw, $u['pass_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
+        $cands = q('SELECT * FROM users WHERE username=? OR email=?', [$name, $name])->fetchAll();
+        $tail = substr(preg_replace('/\D/', '', $name), -9);
+        if (preg_match('/^\+?[\d\s\-]{8,}$/', $name) && strlen($tail) >= 8)                       // الدخول برقم الجوال المسجّل في الحساب
+            foreach (q("SELECT * FROM users WHERE phone IS NOT NULL AND phone<>''")->fetchAll() as $x)
+                if (substr(preg_replace('/\D/', '', $x['phone']), -9) === $tail && !in_array($x['id'], array_column($cands, 'id'))) $cands[] = $x;
+        $u = $cands[0] ?? null; $ok = false;
+        foreach ($cands as $x) if ($x['active'] && password_verify($pw, $x['pass_hash'])) { $u = $x; $ok = true; break; }
+        if (!$cands) password_verify($pw, '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
         if (!$u) {
             $rq = q('SELECT pass_hash FROM signup_requests WHERE username=?', [$name])->fetch();
             if ($rq && password_verify($pw, $rq['pass_hash'])) fail('طلب تسجيلك قيد المراجعة من الإدارة، سيُفعَّل حسابك بعد الموافقة', 403);
