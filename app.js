@@ -248,15 +248,20 @@ function aboutHtml(txt) {
     if (!s) { flush(); return; }
     if (/^[-•]\s+/.test(s)) { list.push(s.replace(/^[-•]\s+/, '')); return; }
     flush();
-    out.push(/[؟?:]$/.test(s) && s.length < 60 ? `<h3 class="ab-h">${esc(s)}</h3>` : `<p>${esc(s)}</p>`);
+    if (s.startsWith('# ')) out.push(`<h2 class="ab-sec">${esc(s.slice(2))}</h2>`);
+    else if (s.startsWith('> ')) out.push(`<blockquote class="ab-q">${esc(s.slice(2))}`);
+    else if (/^[—–]\s/.test(s) && out.length && out[out.length - 1].startsWith('<blockquote')) out[out.length - 1] += `<cite>${esc(s.replace(/^[—–]\s+/, ''))}</cite></blockquote>`;
+    else if (s.startsWith('﴿')) out.push(`<div class="ab-ayah">${esc(s)}</div>`);
+    else out.push(/[؟?:]$/.test(s) && s.length < 60 ? `<h3 class="ab-h">${esc(s)}</h3>` : `<p>${esc(s)}</p>`);
   });
-  flush(); return out.join('');
+  flush();
+  return out.map(x => x.startsWith('<blockquote') && !x.endsWith('</blockquote>') ? x + '</blockquote>' : x).join('');
 }
 function aboutCards() {
   const b = platformBrand();
   return `<div class="card about"><div class="ab-top"><img class="logo" src="${esc(b.logo) || 'icon.svg'}" alt=""><div><h2>منصة ${esc(b.name)}</h2>${b.tagline ? `<small class="hint">${esc(b.tagline)}</small>` : ''}</div></div>
     <div class="ab-body">${aboutHtml(b.about)}</div></div>
-  <div class="card"><h3>💬 نسعد بتواصلكم ومقترحاتكم</h3>${st.fbDone ? `<div class="empty"><span class="ico">✅</span><b>وصلتنا رسالتك، جزاك الله خيراً</b></div>` : feedbackForm()}</div>`;
+  <div class="card"><h3>💬 راسلنا</h3>${st.fbDone ? `<div class="empty"><span class="ico">✅</span><b>وصلتنا رسالتك، جزاك الله خيراً</b></div>` : feedbackForm()}</div>`;
 }
 function viewAbout() { return aboutCards() + `<div class="card"><button class="btn light block" data-act="nav" data-id="home">رجوع للرئيسية</button></div>`; }
 function renderAbout() {

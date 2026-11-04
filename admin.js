@@ -112,7 +112,7 @@ function secPlatform() {
       <div><label class="f">اسم المنصة</label><input name="platform_name" value="${esc(p.platform_name)}" maxlength="40" required></div>
       <div><label class="f">الوصف المختصر</label><input name="platform_tagline" value="${esc(p.platform_tagline)}" maxlength="90"></div>
       <div><label class="f">عبارة الوقف <span class="hint">(تظهر أسفل صفحة الدخول وفي الكشوف، فارغة = بلا عبارة)</span></label><input name="platform_waqf" value="${esc(p.platform_waqf)}" maxlength="200"></div>
-      <div><label class="f">نص صفحة «عن المنصة» <span class="hint">(سطر فارغ يفصل الفقرات، وسطر يبدأ بـ «- » يصير نقطة، وسطر ينتهي بـ «؟» عنوان فرعي)</span></label><textarea name="about_text" rows="12" maxlength="4000">${esc(p.about_text)}</textarea></div>
+      <div><label class="f">نص صفحة «عن المنصة» <span class="hint">(سطر فارغ يفصل الفقرات؛ «# » عنوان قسم؛ «- » نقطة؛ سطر يبدأ بـ ﴿ آية؛ «> » حديث وتحته سطر يبدأ بـ «— » للتخريج؛ سطر ينتهي بـ «:» عنوان فرعي)</span></label><textarea name="about_text" rows="12" maxlength="4000">${esc(p.about_text)}</textarea></div>
       <div><label class="f">بريد استقبال رسائل التواصل <span class="hint">(فارغ = بريد مدير النظام)</span></label><input name="contact_email" type="email" value="${esc(p.contact_email)}" maxlength="190" dir="ltr"></div>
       <p class="hint" style="margin:0">يظهر الاسم والشعار في صفحة الدخول وحساب المدير ورسائل البريد. أما المدارس والمعلمون المستقلون فيظهر لهم اسم وشعار حلقاتهم.</p>
       <h3 style="margin-top:6px">🧪 شارة المرحلة (صفحتا الدخول والتسجيل)</h3>
