@@ -332,3 +332,7 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 
 .hsw{display:flex;align-items:center;gap:6px;margin-bottom:12px}.hsw .hscroll{flex:1;min-width:0}
 .hsa{flex:none;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);background:#fff;color:var(--g1);font-size:22px;font-weight:800;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0 0 3px}.hsa:hover{background:var(--g3)}
+
+.bub .m small .aud{display:inline-block;margin-inline-start:6px;padding:0 8px;border-radius:9px;background:var(--g3);color:var(--g1);font-size:11px;font-weight:700}
+.bub .m small .aud.in{background:#fff1cf;color:#8a6200}
+.checks label[hidden]{display:none}

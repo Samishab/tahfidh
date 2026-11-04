@@ -145,7 +145,7 @@ function recOut(array $r): array {
 }
 function msgOut(array $m): array {
     return ['id' => (int)$m['id'], 'studentId' => (int)$m['student_id'], 'senderId' => (int)$m['sender_id'],
-        'senderName' => $m['sname'] ?? 'محذوف', 'senderRole' => $m['srole'] ?? '', 'body' => $m['body'], 'at' => iso($m['created_at'])];
+        'senderName' => $m['sname'] ?? 'محذوف', 'senderRole' => $m['srole'] ?? '', 'body' => $m['body'], 'aud' => $m['aud'] ?? 'both', 'at' => iso($m['created_at'])];
 }
 function userOut(array $u): array {
     return ['id' => (int)$u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'],
@@ -153,8 +153,17 @@ function userOut(array $u): array {
         'last_login' => $u['last_login'] ?? null];
 }
 const MSG_SQL = 'SELECT m.*, u.name sname, u.role srole FROM messages m LEFT JOIN users u ON u.id=m.sender_id';
-/** رسائل مدير النظام ملاحظات داخلية: لا تصل إلى ولي الأمر ولا إلى الطالب */
-function msgHide(array $u): string { return in_array($u['role'], ['parent', 'student'], true) ? " AND (u.role IS NULL OR u.role<>'admin')" : ''; }
+/** من يرى أي رسالة: ولي الأمر والطالب لا يريان إلا ما وُجّه إليهما أو كتباه؛ الطاقم (معلم، مدير مدرسة، مدير نظام) يرى كل رسائل طلابه */
+function msgVis(array $u): string {
+    $id = (int)$u['id'];
+    if ($u['role'] === 'parent') return " AND (m.aud IN ('parents','both') OR m.sender_id=$id)";
+    if ($u['role'] === 'student') return " AND (m.aud IN ('student','both') OR m.sender_id=$id)";
+    return '';
+}
+function msgAud(array $u, $v): string {
+    if (in_array($u['role'], ['admin', 'parent', 'student'], true)) return 'staff';   // مدير النظام: ملاحظات داخلية؛ ولي الأمر/الطالب: ردودهم للطاقم
+    return in_array($v, ['parents', 'student', 'both', 'staff'], true) ? $v : 'both';
+}
 
 function bootstrap(array $u): array {
     [$w, $p] = scope($u);
@@ -172,7 +181,7 @@ function bootstrap(array $u): array {
         'teacher_id' => $s['teacher_id'] ? (int)$s['teacher_id'] : null, 'user_id' => $s['user_id'] ? (int)$s['user_id'] : null,
         'parents' => $par[(int)$s['id']] ?? [], 'teachers' => $tch[(int)$s['id']] ?? []], $students);
     $recs = array_map('recOut', q("SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.student_id IN ($in) ORDER BY r.rec_date DESC, r.id DESC")->fetchAll());
-    $msgs = array_reverse(array_map('msgOut', q(MSG_SQL . " WHERE m.student_id IN ($in)" . msgHide($u) . " ORDER BY m.id DESC LIMIT 600")->fetchAll()));
+    $msgs = array_reverse(array_map('msgOut', q(MSG_SQL . " WHERE m.student_id IN ($in)" . msgVis($u) . " ORDER BY m.id DESC LIMIT 600")->fetchAll()));
     $reads = [];
     foreach (q('SELECT student_id,last_id FROM message_reads WHERE user_id=?', [$u['id']])->fetchAll() as $r) $reads[(int)$r['student_id']] = (int)$r['last_id'];
 
@@ -330,9 +339,38 @@ try {
         $u = need(); $sid = (int)(body()['studentId'] ?? 0); $text = str('body', 1000);
         if ($text === '') fail('اكتب الرسالة');
         if (!canSee($u, $sid)) fail('غير مصرح', 403);
-        q('INSERT INTO messages (student_id,sender_id,body) VALUES (?,?,?)', [$sid, $u['id'], $text]);
+        q('INSERT INTO messages (student_id,sender_id,body,aud) VALUES (?,?,?,?)', [$sid, $u['id'], $text, msgAud($u, body()['aud'] ?? '')]);
         $id = (int)db()->lastInsertId();
         out(['message' => msgOut(q(MSG_SQL . ' WHERE m.id=?', [$id])->fetch())]);
+    }
+    case 'message_multi': {                                                   // رسالة لعدة طلاب/أولياء دفعة واحدة (مجموعة أو الجميع)
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $text = str('body', 1000);
+        $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', is_array($b['studentIds'] ?? null) ? $b['studentIds'] : [])))), 0, 300);
+        if ($text === '') fail('اكتب الرسالة');
+        if (!$ids) fail('اختر طالباً واحداً على الأقل');
+        $aud = msgAud($u, $b['aud'] ?? ''); [$w, $p] = scope($u);
+        $in = implode(',', $ids);
+        $rows = q("SELECT id,user_id FROM students WHERE id IN ($in) AND $w", $p)->fetchAll();
+        if (count($rows) !== count($ids)) fail('طالب غير صحيح');
+        $hasPar = array_flip(array_column(q("SELECT DISTINCT student_id FROM parent_student WHERE student_id IN ($in)")->fetchAll(), 'student_id'));
+        $new = []; $unreached = 0;
+        foreach ($rows as $r) {
+            $sidn = (int)$r['id']; $par = isset($hasPar[$sidn]); $stu = !empty($r['user_id']);
+            if (($aud === 'parents' && !$par) || ($aud === 'student' && !$stu) || ($aud === 'both' && !$par && !$stu)) $unreached++;
+            q('INSERT INTO messages (student_id,sender_id,body,aud) VALUES (?,?,?,?)', [$sidn, $u['id'], $text, $aud]);
+            $new[] = (int)db()->lastInsertId();
+        }
+        out(['messages' => array_map('msgOut', q(MSG_SQL . ' WHERE m.id IN (' . implode(',', $new) . ') ORDER BY m.id')->fetchAll()), 'unreached' => $unreached]);
+    }
+    case 'message_edit': {                                                    // تغيير من يرى الرسالة أو حذفها: لصاحبها أو لإدارة المدرسة
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $id = (int)($b['id'] ?? 0);
+        $m = q('SELECT * FROM messages WHERE id=?', [$id])->fetch();
+        if (!$m) fail('الرسالة غير موجودة', 404);
+        if ((int)$m['sender_id'] !== (int)$u['id'] && !in_array($u['role'], ['admin', 'school_admin'], true)) fail('غير مصرح', 403);
+        if (!canSee($u, (int)$m['student_id'])) fail('غير مصرح', 403);
+        if (($b['action'] ?? '') === 'delete') q('DELETE FROM messages WHERE id=?', [$id]);
+        else q('UPDATE messages SET aud=? WHERE id=?', [msgAud($u, $b['aud'] ?? ''), $id]);
+        out(['ok' => true]);
     }
     case 'messages_read': {
         $u = need(); $sid = (int)(body()['studentId'] ?? 0); $last = (int)(body()['lastId'] ?? 0);
@@ -342,7 +380,7 @@ try {
     }
     case 'poll': {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
-        out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w" . msgHide($u) . " ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
+        out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w" . msgVis($u) . " ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
             'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn()
                 : ($u['role'] === 'school_admin' ? (int)q("SELECT COUNT(*) FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher')", [$u['school_id']])->fetchColumn() : 0)]);
     }

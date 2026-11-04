@@ -587,27 +587,49 @@ function viewStats() {
 }
 
 /* ---------- الرسائل ---------- */
+const AUD_AR = { parents: '👪 ولي الأمر', student: '🎓 الطالب', both: '👪🎓 كلاهما', staff: '🔒 داخلية' };
+const audChips = (cur, act) => (isAdmin() ? ['staff'] : ['parents', 'student', 'both', 'staff']).map(k => `<button type="button" class="chip ${cur === k ? 'on' : ''}" data-act="${act}" data-id="${k}">${AUD_AR[k]}</button>`).join('');
+const audHint = a => ({ parents: 'تصل إلى أولياء أمور الطلاب المختارين، ولا يراها الطالب.', student: 'تصل إلى حساب الطالب فقط، ولا يراها ولي الأمر.', both: 'يراها ولي الأمر والطالب.', staff: 'ملاحظة داخلية يراها الطاقم (المعلمون ومدير المدرسة) فقط.' }[a]);
 function viewMessages() {
   if (st.thread) return viewThread();
   const rows = db.students.map(s => { const ms = msgsOf(s.id); return { s, last: ms[ms.length - 1], un: unread(s.id) }; })
     .sort((a, b) => (b.last?.id || 0) - (a.last?.id || 0));
+  const top = staff() ? `<button class="btn gold block" style="margin-bottom:12px" data-act="msg-new">✉️ رسالة جديدة — لطالب أو ولي أمر أو مجموعة أو الجميع</button>` : '';
   if (!rows.length) return `<div class="card">${empty('💬', 'لا يوجد طلاب مرتبطون بحسابك')}</div>`;
-  return `<p class="hint" style="margin:0 4px 10px">${staff() ? 'رسائل أولياء الأمور والطلاب' : 'أرسل ملاحظاتك واستفساراتك للمعلم'}</p>
+  return `${top}<p class="hint" style="margin:0 4px 10px">${staff() ? 'المحادثات بحسب الطالب (اضغط لفتح المحادثة والرد)' : 'أرسل ملاحظاتك واستفساراتك للمعلم'}</p>
   <div class="list">${rows.map(({ s, last, un }) => `<div class="item" data-act="open-thread" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
     <div class="t"><b>${esc(s.name)}</b><small>${last ? esc((last.senderId === db.me.id ? 'أنت: ' : '') + last.body.slice(0, 42)) : 'لا توجد رسائل — ابدأ المحادثة'}</small></div>
     <div class="side">${last ? `<small>${fmtT(last.at)}</small>` : ''}${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`).join('')}</div>`;
 }
 function viewThread() {
   const s = student(st.thread); if (!s) { st.thread = null; return viewMessages(); }
-  const ms = msgsOf(s.id);
+  const ms = msgsOf(s.id), sf = staff(), aud = isAdmin() ? 'staff' : (st.aud || 'both');
   setTimeout(() => { const b = $('#bub'); if (b) b.scrollTop = b.scrollHeight; markRead(s.id); }, 0);
+  const badge = m => !sf ? '' : (m.senderRole === 'parent' || m.senderRole === 'student' ? '<span class="aud">↩ رد</span>'
+    : `<span class="aud ${m.aud === 'staff' ? 'in' : ''}" ${m.senderId === db.me.id || isMgr() ? `data-act="msg-opt" data-id="${m.id}" style="cursor:pointer"` : ''}>${AUD_AR[m.aud] || ''}${m.senderId === db.me.id || isMgr() ? ' ⋯' : ''}</span>`);
   return `<div class="card">
     <div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="close-thread">→ رجوع</button><b>💬 ${esc(s.name)}</b></div>
-    <div class="bub" id="bub">${ms.length ? ms.map(m => `<div class="m ${m.senderId === db.me.id ? 'mine' : ''}"><small>${esc(m.senderName)} • ${ROLE_AR[m.senderRole] || ''}</small><p>${esc(m.body)}</p><small>${fmtT(m.at)}</small></div>`).join('') : empty('💬', 'لا توجد رسائل بعد')}</div>
-    ${isAdmin() ? '<p class="hint" style="margin:8px 0 0">🔒 رسائلك كمدير نظام ملاحظات داخلية: يراها المعلمون ومدير المدرسة فقط، ولا تصل إلى ولي الأمر.</p>' : ''}
-    <form id="msgform" class="row" style="margin-top:10px;align-items:flex-end"><textarea id="msgin" rows="2" maxlength="1000" placeholder="اكتب ملاحظتك...">${esc(st.draft)}</textarea><button class="btn auto">إرسال</button></form>
+    <div class="bub" id="bub">${ms.length ? ms.map(m => `<div class="m ${m.senderId === db.me.id ? 'mine' : ''}"><small>${esc(m.senderName)} • ${ROLE_AR[m.senderRole] || ''} ${badge(m)}</small><p>${esc(m.body)}</p><small>${fmtT(m.at)}</small></div>`).join('') : empty('💬', 'لا توجد رسائل بعد')}</div>
+    ${sf ? `<div class="hscroll" style="margin-top:10px"><span class="hint" style="align-self:center">إلى:</span>${audChips(aud, 'thr-aud')}</div><p class="hint" style="margin:6px 0 0">${audHint(aud)}</p>`
+      : '<p class="hint" style="margin:8px 0 0">رسالتك تصل إلى المعلمين وإدارة المدرسة.</p>'}
+    <form id="msgform" class="row" style="margin-top:8px;align-items:flex-end"><textarea id="msgin" rows="2" maxlength="1000" placeholder="اكتب رسالتك...">${esc(st.draft)}</textarea><button class="btn auto">إرسال</button></form>
   </div>`;
 }
+/* رسالة جديدة: اختيار المستلمين (طالب / مجموعة / الجميع) ومن يراها */
+function msgComposeHtml() {
+  const groups = [...new Set(db.students.map(s => s.group).filter(Boolean))], aud = st.cmAud || (isAdmin() ? 'staff' : 'parents');
+  return `<h2>✉️ رسالة جديدة</h2>
+  <form id="mcform" class="gap">
+    <div><label class="f">إلى من؟</label><div class="hscroll" id="mc_aud">${audChips(aud, 'mc-aud')}</div><p class="hint" id="mc_hint" style="margin:6px 0 0">${audHint(aud)}</p></div>
+    <div><label class="f">الطلاب المختارون <span class="hint" id="mc_cnt"></span></label>
+      <input id="mc_q" type="search" placeholder="🔍 بحث عن طالب..." style="margin-bottom:8px">
+      <div class="hscroll" style="margin-bottom:8px"><button type="button" class="chip" data-act="mc-sel" data-id="all">☑ الجميع</button><button type="button" class="chip" data-act="mc-sel" data-id="none">☐ إلغاء الكل</button>${groups.map(g => `<button type="button" class="chip" data-act="mc-sel" data-id="g:${esc(g)}">${esc(g)}</button>`).join('')}</div>
+      <div class="checks" id="mc_list" style="max-height:230px;overflow:auto">${db.students.map(s => `<label data-n="${esc(normS(s.name))}"><input type="checkbox" name="mcs" value="${s.id}" data-g="${esc(s.group || '')}" ${st.thread && +st.thread === s.id ? 'checked' : ''}> ${esc(s.name)}${s.group ? ` <small class="hint">${esc(s.group)}</small>` : ''}</label>`).join('')}</div></div>
+    <div><label class="f">الرسالة</label><textarea name="body" rows="4" maxlength="1000" required placeholder="اكتب رسالتك..."></textarea></div>
+    <button class="btn block gold">إرسال</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
+  </form>`;
+}
+function mcCount() { const c = $('#mc_cnt'); if (c) c.textContent = '(' + document.querySelectorAll('#mc_list input:checked').length + ' من ' + db.students.length + ')'; }
 
 /* ---------- الإدارة (مدير) ---------- */
 const soloSchool = s => !!s.is_solo || db.users.some(u => u.school_id === s.id && u.solo);
@@ -859,6 +881,20 @@ const acts = {
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
   'fs-all': async () => { st.fs = ''; try { localStorage.setItem('tahfidh_fs', ''); } catch { } await refresh(); st.adm = {}; closeModal(); render(); toast('تم عرض كل المدارس — افتح «إضافة ولي أمر» من جديد'); },
+  'msg-new': () => { st.cmAud = isAdmin() ? 'staff' : (st.aud || 'parents'); modal(msgComposeHtml()); mcCount(); },
+  'mc-aud': id => { st.cmAud = id; $('#mc_aud').innerHTML = audChips(id, 'mc-aud'); $('#mc_hint').textContent = audHint(id); },
+  'mc-sel': id => {
+    const boxes = [...document.querySelectorAll('#mc_list label:not([hidden]) input')];
+    boxes.forEach(b => { if (id === 'all') b.checked = true; else if (id === 'none') b.checked = false; else if (b.dataset.g === id.slice(2)) b.checked = true; });
+    mcCount();
+  },
+  'thr-aud': id => { st.aud = id; render(); },
+  'msg-opt': id => {
+    const m = db.messages.find(x => x.id === +id); if (!m) return;
+    modal(`<h2>⋯ الرسالة</h2><p class="hint" style="margin-top:0">${esc(m.body.slice(0, 120))}</p><label class="f">من يراها؟</label><div class="hscroll" style="margin-bottom:12px">${audChips(m.aud, 'msg-aud:' + m.id)}</div>
+      <div class="gap"><button class="btn red block" data-act="msg-del" data-id="${m.id}">🗑 حذف الرسالة</button><button class="btn light block" data-act="close">إغلاق</button></div>`);
+  },
+  'msg-del': async id => { if (!confirm('حذف هذه الرسالة نهائياً؟')) return; await api('message_edit', { id: +id, action: 'delete' }); db.messages = db.messages.filter(x => x.id !== +id); closeModal(); render(); toast('تم الحذف'); },
   'em-cancel': () => { st.emv = null; render(); },
   hs: (d, el) => { const s = el.parentElement.querySelector('.hscroll'); if (s) s.scrollBy({ left: +d * 220, behavior: 'smooth' }); },
   feedback: async () => {
@@ -896,11 +932,13 @@ const acts = {
 };
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
+  if (el.dataset.act.startsWith('msg-aud:')) { run(async () => { const mid = +el.dataset.act.slice(8); await api('message_edit', { id: mid, aud: el.dataset.id }); const m = db.messages.find(x => x.id === mid); if (m) m.aud = isAdmin() ? 'staff' : el.dataset.id; closeModal(); render(); toast('تم التحديث'); })(); return; }
   const fn = acts[el.dataset.act]; if (fn) run(fn)(el.dataset.id, el);
 });
 
 document.addEventListener('input', e => {
   const t = e.target;
+  if (t.id === 'mc_q') { const q = normS(t.value); document.querySelectorAll('#mc_list label').forEach(l => { l.hidden = !!q && !(l.dataset.n || '').includes(q); }); return; }
   if (t.id === 'q') { st.q = t.value; const p = t.selectionStart; render(); const q = $('#q'); q.focus(); q.setSelectionRange(p, p); return; }
   if (t.id === 'msgin') { st.draft = t.value; return; }
   if (!t.dataset.f || !st.form) return;
@@ -940,8 +978,15 @@ document.addEventListener('submit', run(async e => {
   }
   if (f.id === 'msgform') {
     const text = $('#msgin').value.trim(); if (!text) return;
-    const r = await api('message_send', { studentId: st.thread, body: text });
+    const r = await api('message_send', { studentId: st.thread, body: text, aud: st.aud || 'both' });
     db.messages.push(r.message); st.draft = ''; render(); return;
+  }
+  if (f.id === 'mcform') {
+    const ids = [...f.querySelectorAll('[name=mcs]:checked')].map(x => +x.value);
+    if (!ids.length) return toast('اختر طالباً واحداً على الأقل');
+    const r = await api('message_multi', { studentIds: ids, aud: st.cmAud || (isAdmin() ? 'staff' : 'parents'), body: f.body.value });
+    db.messages.push(...r.messages); closeModal(); st.thread = ids.length === 1 ? ids[0] : null; st.view = 'messages'; render();
+    toast(r.unreached ? `أُرسلت، لكن ${r.unreached} طالب ليس له حساب لهذه الفئة فلن تصله` : `أُرسلت إلى ${ids.length} طالب ✔`); return;
   }
   if (f.id === 'emform') {
     const email = f.email.value.trim().toLowerCase(); await api('email_code', { email });
@@ -1020,6 +1065,7 @@ document.addEventListener('submit', run(async e => {
 
 document.addEventListener('change', run(async e => {
   const t = e.target;
+  if (t.name === 'mcs') mcCount();
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
   if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
