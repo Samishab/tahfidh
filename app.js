@@ -691,6 +691,7 @@ function userForm(u) {
     ${soloNew ? '<div><label class="f">اسم الحلقة <span class="hint">(اختياري)</span></label><input name="sname" maxlength="120" placeholder="مثال: حلقة الشيخ ..."></div>'
       : soloOld ? `<input type="hidden" name="school" value="${u.school_id}">`
       : isAdmin() && r !== 'admin' && !isParent ? `<div><label class="f">المدرسة</label><select name="school">${db.schools.map(x => `<option value="${x.id}" ${u && u.school_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+    ${isParent && isAdmin() && st.fs ? `<div class="info" style="text-align:start">القائمة تعرض طلاب «${esc(sch(+st.fs))}» فقط لأن تصفية المدرسة مفعّلة في الأعلى. <button type="button" class="btn gold sm" style="margin-top:6px" data-act="fs-all">عرض طلاب كل المدارس</button></div>` : ''}
     ${isParent ? `<div><label class="f">الأبناء المرتبطون <span class="hint">(مطلوب طالب واحد على الأقل)</span></label>
       ${db.students.length ? `<div class="checks">${db.students.map(s => `<label><input type="checkbox" name="ps" value="${s.id}" ${u && s.parents.includes(u.id) ? 'checked' : ''}> ${esc(s.name)}${multi ? ` <small class="hint">${esc(sch(s.school_id))}</small>` : ''}</label>`).join('')}</div>` : '<p class="hint">أضف طلاباً أولاً من تبويب «الطلاب» ثم اربط ولي الأمر بهم.</p>'}</div>` : ''}
     ${isAdmin() && (r === 'teacher' || r === 'solo') ? `<label class="row" style="gap:8px"><input type="checkbox" name="qiraat" style="width:auto;flex:none" ${u && u.qiraat ? 'checked' : ''}> يُقرئ بالقراءات العشر (بالإضافة إلى حفص)</label>` : ''}
@@ -840,6 +841,7 @@ const acts = {
   lm: id => { st.lm = id; render(); },
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
+  'fs-all': async () => { st.fs = ''; try { localStorage.setItem('tahfidh_fs', ''); } catch { } await refresh(); st.adm = {}; closeModal(); render(); toast('تم عرض كل المدارس — افتح «إضافة ولي أمر» من جديد'); },
   'em-cancel': () => { st.emv = null; render(); },
   hs: (d, el) => { const s = el.parentElement.querySelector('.hscroll'); if (s) s.scrollBy({ left: +d * 220, behavior: 'smooth' }); },
   feedback: async () => {
