@@ -1,4 +1,4 @@
-/* متابعة التحفيظ — واجهة المدير والمعلم وولي الأمر والطالب. البيانات من الخادم (api/index.php). */
+/* صاحب القرآن — واجهة المدير والمعلم وولي الأمر والطالب. البيانات من الخادم (api/index.php). */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const GRADES = ['ممتاز', 'جيد جداً', 'جيد', 'مقبول', 'إعادة'];
@@ -30,7 +30,7 @@ const isAdmin = () => role() === 'admin';                         // مدير ا
 const isMgr = () => role() === 'admin' || role() === 'school_admin'; // مدير النظام أو مدير مدرسة
 const staff = () => role() === 'admin' || role() === 'school_admin' || role() === 'teacher';
 const roleLabel = u => u.solo ? 'معلم مستقل' : ROLE_AR[u.role];
-const platformBrand = () => { const b = (db.app && db.app.brand) || (st.site && st.site.brand) || {}; return { name: b.name || 'سَنَد', tagline: b.tagline || '', logo: b.logo || '' }; };
+const platformBrand = () => { const b = (db.app && db.app.brand) || (st.site && st.site.brand) || {}; return { name: b.name || 'صاحب القرآن', tagline: b.tagline || '', logo: b.logo || '', waqf: b.waqf !== undefined ? b.waqf : 'وقفٌ لله تعالى لخدمة القرآن الكريم وأهله' }; };
 const brand = () => db.school || platformBrand();                           // مدير النظام: هوية المنصة؛ غيره: هوية مدرسته
 const brandFor = id => db.schools.find(x => x.id === +id) || brand();          // هوية مدرسة الطالب في الكشوف المطبوعة
 const teacherNames = s => (s.teachers || (s.teacher_id ? [s.teacher_id] : [])).map(id => (userById(id) || (+id === db.me.id ? db.me : null) || {}).name).filter(Boolean).join('، ');
@@ -192,8 +192,31 @@ function renderLogin() {
       ${!st.site || st.site.reg_open !== false ? '<button type="button" class="btn ghost block" style="margin-top:12px" data-act="signup">📝 طلب تسجيل جديد</button><p class="hint" style="text-align:center;margin:8px 0 0">التسجيل الجديد يُفعَّل بعد موافقة الإدارة.</p>' : ''}
     </div>
     ${betaNote()}
+    <button type="button" class="fbbtn" data-act="feedback">💬 تواصل معنا واقتراحاتك</button>
+    ${waqfLine()}
   </div>`;
 }
+const FB_KINDS = [['suggestion', '💡 اقتراح للتحسين'], ['contact', '✉️ تواصل'], ['issue', '🐞 مشكلة'], ['praise', '🌟 رأي / شكر']];
+function feedbackForm() {
+  const me = db.me;
+  return `<form id="fbform" class="gap">
+    <div><label class="f">نوع الرسالة</label><select name="kind">${FB_KINDS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
+    <div><label class="f">الاسم <span class="hint">(اختياري)</span></label><input name="name" maxlength="120" value="${esc(me ? me.name : '')}"></div>
+    <div><label class="f">البريد الإلكتروني <span class="hint">(اختياري، إن أردت رداً)</span></label><input name="email" type="email" inputmode="email" autocapitalize="off" value="${esc((me && me.email) || '')}"></div>
+    <div><label class="f">رسالتك</label><textarea name="message" rows="5" minlength="10" maxlength="2000" required placeholder="اكتب رأيك أو اقتراحك أو مشكلتك..."></textarea></div>
+    <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <button class="btn block gold">إرسال</button>
+  </form>`;
+}
+function renderFeedback() {
+  const d = st.fbDone;
+  $('#app').innerHTML = `
+  <div class="auth"><div class="brand">${logoImg()}<h1>تواصل معنا</h1><p>رأيك واقتراحك يساعدنا على تحسين المنصة</p></div>
+    <div class="card">${d ? `<div class="empty"><span class="ico">✅</span><b>وصلتنا رسالتك، جزاك الله خيراً</b></div><button class="btn light block" data-act="to-login">رجوع</button>`
+      : `${feedbackForm()}<button type="button" class="btn light block" style="margin-top:8px" data-act="to-login">رجوع</button>`}</div>
+    ${waqfLine()}</div>`;
+}
+const waqfLine = () => { const w = platformBrand().waqf; return w ? `<div class="waqf">${esc(w)}</div>` : ''; };
 function renderSignup() {
   const d = st.signupDone, br = platformBrand();
   $('#app').innerHTML = `
@@ -259,7 +282,7 @@ function shell(body) {
     <div class="pagetitle">${t}${sub ? `<small>${sub}</small>` : ''}</div>
     ${isAdmin() && db.schools.length > 1 ? `<select id="fschool" class="fsel" title="تصفية بحسب المدرسة"><option value="">🏫 كل المدارس</option>${db.schools.map(x => `<option value="${x.id}" ${+st.fs === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}
   </header>
-  <main>${db.me.must_change ? '<div class="card" data-act="nav" data-id="account" style="border:1.5px solid var(--gold);background:var(--gold2);cursor:pointer"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">اضغط هنا لتغييرها متى شئت — لا يمنعك شيء من العمل.</div></div>' : ''}${body}</main>
+  <main>${db.me.must_change ? '<div class="card" data-act="nav" data-id="account" style="border:1.5px solid var(--gold);background:var(--gold2);cursor:pointer"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">اضغط هنا لتغييرها متى شئت — لا يمنعك شيء من العمل.</div></div>' : ''}${body}${waqfLine()}</main>
   <nav class="tabbar">${tabsHtml()}</nav>`;
 }
 
@@ -578,13 +601,13 @@ const schoolState = s => s.active === false ? '⛔ موقوفة' : (s.expires_at
 const schoolLogoImg = s => s.logo ? `<img class="logo" style="width:44px;height:44px;border-radius:12px" src="${esc(s.logo)}">` : '<div class="avatar">🏫</div>';
 function viewManage() {
   const rq = ['requests', `📨 الطلبات${db.requests.length ? ' (' + db.requests.length + ')' : ''}`];
-  const T = isAdmin() ? [['overview', '📊 نظرة عامة'], rq, ['schools', '🏫 المدارس'], ['solo', '🧑‍🏫 المعلمون المستقلون'], ['school_admin', '👔 مدراء المدارس'], ['teacher', '👨‍🏫 المعلمون'], ['parent', '👪 أولياء الأمور'], ['admin', '🛡 مدراء النظام'], ['auth', '🔐 الدخول والرموز'], ['platform', '⚙️ المنصة'], ['audit', '🧾 السجل والنسخ']]
+  const T = isAdmin() ? [['overview', '📊 نظرة عامة'], rq, ['schools', '🏫 المدارس'], ['solo', '🧑‍🏫 المعلمون المستقلون'], ['school_admin', '👔 مدراء المدارس'], ['teacher', '👨‍🏫 المعلمون'], ['parent', '👪 أولياء الأمور'], ['admin', '🛡 مدراء النظام'], ['inbox', '💬 الرسائل'], ['auth', '🔐 الدخول والرموز'], ['platform', '⚙️ المنصة'], ['audit', '🧾 السجل والنسخ']]
     : db.me.solo ? [['parent', 'أولياء الأمور'], ['myschool', 'حلقتي']] : [[rq[0], 'الطلبات' + (db.requests.length ? ' (' + db.requests.length + ')' : '')], ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['myschool', 'مدرستي']];
   if (isAdmin() && !st.mtInit) { st.mt = 'overview'; st.mtInit = true; }
   if (!T.some(x => x[0] === st.mt)) st.mt = T[0][0];
   const chips = isAdmin() ? `<div class="hscroll" style="margin-bottom:12px">${T.map(([k, l]) => `<button class="chip ${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}">${l}</button>`).join('')}</div>`
     : `<div class="seg" style="margin-bottom:12px;flex-wrap:wrap">${T.map(([k, l]) => `<button class="${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}" style="font-size:13px">${l}</button>`).join('')}</div>`;
-  if (['overview', 'auth', 'platform', 'audit'].includes(st.mt)) return `<div class="card">${chips}</div>${adminSection(st.mt)}`;
+  if (['overview', 'inbox', 'auth', 'platform', 'audit'].includes(st.mt)) return `<div class="card">${chips}</div>${adminSection(st.mt)}`;
   let list, addBtn = '';
   if (st.mt === 'requests') {
     list = db.requests.length ? db.requests.map(r => `<div class="item" data-act="view-request" data-id="${r.id}"><div class="avatar">${{ parent: '👪', teacher: '👨‍🏫', school: '🏫', solo: '🧑‍🏫' }[r.role]}</div>
@@ -710,6 +733,7 @@ function accountView() {
   <div class="card"><h3>🔑 تغيير كلمة المرور</h3>
     <form id="pwform" class="gap"><input name="old" type="password" placeholder="كلمة المرور الحالية" required autocomplete="current-password">
       <input name="new" type="password" placeholder="كلمة المرور الجديدة (٦ أحرف على الأقل)" minlength="6" required autocomplete="new-password"><button class="btn block">تغيير</button></form></div>
+  <div class="card"><h3>💬 تواصل واقتراحات</h3><p class="hint" style="margin:0 0 10px">رأيك يهمنا: اقتراح، مشكلة، أو كلمة شكر.</p><button class="btn block light" data-act="feedback">إرسال رسالة</button></div>
   <div class="card"><button class="btn block ghost" data-act="logout">🚪 تسجيل الخروج</button></div>`;
 }
 function resizeLogo(file) {
@@ -728,9 +752,9 @@ function resizeLogo(file) {
 function render() {
   const fa = document.activeElement && document.activeElement.id;
   try { document.title = (db.me ? brand() : platformBrand()).name; } catch { }
-  if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>متابعة التحفيظ</h1><p>جارٍ التحميل...</p></div></div>`; return; }
+  if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>${esc(platformBrand().name)}</h1><p>جارٍ التحميل...</p></div></div>`; return; }
   if (st.view === 'verify') return renderVerify();
-  if (!db.me) { if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
+  if (!db.me) { if (st.view === 'feedback') return renderFeedback(); if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
   const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, search: viewSearch, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
   if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
@@ -809,6 +833,10 @@ const acts = {
   lm: id => { st.lm = id; render(); },
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
+  feedback: async () => {
+    const r = await api('feedback_token'); st.tk = r.tk; st.fbDone = false;
+    if (db.me) modal(`<h2>💬 تواصل واقتراحات</h2>${feedbackForm()}`); else { st.view = 'feedback'; render(); }
+  },
   signup: async () => { const r = await api('signup_token'); st.tk = r.tk; st.signupDone = false; st.view = 'signup'; render(); },
   'to-login': () => { st.view = 'home'; st.signupDone = false; render(); },
   'view-request': id => requestModal(db.requests.find(r => r.id === +id)),
@@ -886,6 +914,11 @@ document.addEventListener('submit', run(async e => {
     const text = $('#msgin').value.trim(); if (!text) return;
     const r = await api('message_send', { studentId: st.thread, body: text });
     db.messages.push(r.message); st.draft = ''; render(); return;
+  }
+  if (f.id === 'fbform') {
+    await api('feedback_send', { kind: f.kind.value, name: f.name.value, email: f.email.value, message: f.message.value, website: f.website.value, tk: st.tk });
+    if (db.me) { closeModal(); toast('وصلتنا رسالتك، جزاك الله خيراً ✔'); } else { st.fbDone = true; render(); }
+    return;
   }
   if (f.id === 'signupform') {
     if (f.pw.value !== f.pw2.value) return toast('كلمتا المرور غير متطابقتين');

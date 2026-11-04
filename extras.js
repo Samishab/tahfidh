@@ -90,7 +90,7 @@ function monthlySheet(off, school) {
     ${rows.map((r, i) => `<tr><td>${i + 1}</td><td style="text-align:start"><b>${esc(r.s.name)}</b></td><td>${r.x.h}</td><td>${r.x.r}</td><td>${r.x.q || '—'}</td><td>${r.x.n}</td><td>${r.x.days.size}</td><td>${r.avg}</td>
       <td style="text-align:start"><small>${r.last ? Q.name(rEnd(r.last)) + ' ' + r.last.to : '—'}</small></td></tr>`).join('')}</table>` : '<p class="rp-cap">لا يوجد طلاب</p>'}</div>
   <div class="rp-ft"><div><span></span>المعلم</div><div><span></span>إدارة المدرسة</div></div>
-  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(BR.name)}</div>`;
+  <div class="rp-foot">أُصدر بتاريخ ${fmtG(new Date())} • ${esc(BR.name)}${platformBrand().waqf ? ' • ' + esc(platformBrand().waqf) : ''}</div>`;
 }
 function viewMonthly() {
   const m = monthRange(st.mo);

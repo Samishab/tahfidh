@@ -210,7 +210,7 @@ function bootstrap(array $u): array {
         $aud = cfgv('announce_audience'); $isStaff = in_array($u['role'], ['admin', 'school_admin', 'teacher'], true);
         if ($aud === 'all' || ($aud === 'staff' && $isStaff) || ($aud === 'parents' && $u['role'] === 'parent')) $ann = ['title' => cfgv('announce_title'), 'text' => cfgv('announce_text')];
     }
-    $res['app'] = ['week_start' => max(0, min(6, (int)cfgv('week_start'))), 'announce' => $ann, 'brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo')]];
+    $res['app'] = ['week_start' => max(0, min(6, (int)cfgv('week_start'))), 'announce' => $ann, 'brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo'), 'waqf' => cfgv('platform_waqf')]];
     return $res;
 }
 
@@ -794,9 +794,46 @@ try {
 
     /* ----- معلومات عامة قبل الدخول (الشارة، طرق الدخول، التسجيل) ----- */
     case 'site_info':
-        out(['brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo')], 'beta' => ['badge' => cfgv('beta_badge'), 'note' => cfgv('beta_note')], 'reg_open' => cfgv('reg_open') === '1',
+        out(['brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo'), 'waqf' => cfgv('platform_waqf')], 'beta' => ['badge' => cfgv('beta_badge'), 'note' => cfgv('beta_note')], 'reg_open' => cfgv('reg_open') === '1',
             'methods' => ['password' => cfgv('login_password') === '1', 'email' => cfgv('login_otp_email') === '1' && cfgv('smtp_enabled') === '1',
                 'wa' => cfgv('login_otp_wa') === '1' && cfgv('gw_wa_on') === '1', 'sms' => cfgv('login_otp_sms') === '1' && cfgv('gw_sms_on') === '1']]);
+
+    /* ----- تواصل واقتراحات (عام) ----- */
+    case 'feedback_token': out(['tk' => time()]);
+    case 'feedback_send': {
+        $b = body();
+        if (!empty($b['website'])) out(['ok' => true]);                       // فخ للروبوتات (حقل مخفي)
+        $tk = (int)($b['tk'] ?? 0);
+        if ($tk <= 0 || time() - $tk < 3 || time() - $tk > 172800) fail('أعد المحاولة');
+        if ((int)q('SELECT COUNT(*) FROM feedback WHERE ip=? AND created_at > NOW() - INTERVAL 1 HOUR', [ip()])->fetchColumn() >= 5) fail('وصلتنا رسائلك، شكراً لك. حاول لاحقاً', 429);
+        if ((int)q('SELECT COUNT(*) FROM feedback')->fetchColumn() >= 3000) fail('صندوق الرسائل ممتلئ حالياً', 429);
+        $kind = in_array($b['kind'] ?? '', ['contact', 'suggestion', 'issue', 'praise'], true) ? $b['kind'] : 'contact';
+        $name = str('name', 120); $email = strtolower(str('email', 190)); $msg = str('message', 2000);
+        if (mb_strlen($msg) < 10) fail('اكتب رسالتك (١٠ أحرف على الأقل)');
+        if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) fail('البريد الإلكتروني غير صحيح');
+        $u = user(); if ($u) { $name = $name ?: $u['name']; $email = $email ?: strtolower((string)($u['email'] ?? '')); }
+        q('INSERT INTO feedback (kind,name,email,message,user_id,ip) VALUES (?,?,?,?,?,?)', [$kind, $name, $email, $msg, $u ? (int)$u['id'] : null, ip()]);
+        try {
+            $to = cfgv('contact_email') ?: (string)q("SELECT email FROM users WHERE role='admin' AND email IS NOT NULL AND email<>'' ORDER BY id LIMIT 1")->fetchColumn();
+            if ($to !== '' && cfgv('smtp_enabled') === '1') {
+                $kl = ['contact' => 'رسالة تواصل', 'suggestion' => 'اقتراح', 'issue' => 'مشكلة', 'praise' => 'رأي / شكر'][$kind];
+                $inner = '<p style="margin:0 0 10px"><b>' . h($kl) . '</b></p><p style="margin:0 0 6px">من: ' . h($name ?: 'بدون اسم') . ($email ? ' (' . h($email) . ')' : '') . '</p><div style="background:#f4f8f5;border-radius:10px;padding:12px;white-space:pre-wrap">' . h($msg) . '</div>';
+                smtpSend($to, '@@PN@@ — ' . $kl . ' جديدة', mailLayout('رسالة جديدة', $inner), $kl . "\nمن: " . $name . ' ' . $email . "\n\n" . $msg . mailPlainFoot(), 'mail');
+            }
+        } catch (Throwable $e) { }
+        out(['ok' => true]);
+    }
+    case 'feedback_list': {
+        need('admin');
+        out(['items' => array_map(fn($r) => ['id' => (int)$r['id'], 'kind' => $r['kind'], 'name' => $r['name'], 'email' => $r['email'], 'message' => $r['message'], 'status' => $r['status'], 'at' => $r['created_at']],
+            q('SELECT * FROM feedback ORDER BY id DESC LIMIT 200')->fetchAll()), 'unread' => (int)q("SELECT COUNT(*) FROM feedback WHERE status='new'")->fetchColumn()]);
+    }
+    case 'feedback_update': {
+        need('admin'); $b = body(); $id = (int)($b['id'] ?? 0);
+        if (($b['action'] ?? '') === 'delete') q('DELETE FROM feedback WHERE id=?', [$id]);
+        else q("UPDATE feedback SET status=? WHERE id=?", [($b['action'] ?? '') === 'unread' ? 'new' : 'read', $id]);
+        out(['ok' => true]);
+    }
 
     /* ----- لوحة تحكم مدير النظام ----- */
     case 'admin_overview': {
@@ -819,7 +856,7 @@ try {
         need('admin'); $g = fn(array $ks) => array_combine($ks, array_map('cfgv', $ks));
         $gw = fn($c) => ['on' => cfgv("gw_{$c}_on") === '1', 'url' => cfgv("gw_{$c}_url"), 'method' => cfgv("gw_{$c}_method"), 'body' => cfgv("gw_{$c}_body"), 'has_headers' => decSecret(cfgv("gw_{$c}_headers")) !== ''];
         out(['auth' => $g(['reg_open', 'login_password', 'login_otp_email', 'login_otp_wa', 'login_otp_sms', 'otp_ttl', 'otp_max_attempts', 'otp_cooldown', 'otp_hour_limit', 'otp_message', 'phone_cc']),
-            'platform' => $g(['platform_name', 'platform_tagline', 'platform_logo', 'beta_badge', 'beta_note', 'week_start', 'announce_on', 'announce_title', 'announce_text', 'announce_audience']), 'wa' => $gw('wa'), 'sms' => $gw('sms')]);
+            'platform' => $g(['platform_name', 'platform_tagline', 'platform_waqf', 'contact_email', 'platform_logo', 'beta_badge', 'beta_note', 'week_start', 'announce_on', 'announce_title', 'announce_text', 'announce_audience']), 'wa' => $gw('wa'), 'sms' => $gw('sms')]);
     }
     case 'settings_save': {
         need('admin'); $b = body(); $grp = (string)($b['group'] ?? ''); $v = is_array($b['values'] ?? null) ? $b['values'] : [];
@@ -834,7 +871,8 @@ try {
             $aud = in_array($v['announce_audience'] ?? '', ['all', 'staff', 'parents'], true) ? $v['announce_audience'] : 'all';
             $logo = (string)($v['platform_logo'] ?? 'keep');
             if ($logo !== 'keep' && $logo !== '' && (!str_starts_with($logo, 'data:image/') || strlen($logo) > 400000)) fail('الشعار غير صالح');
-            $set = ['platform_name' => $txt('platform_name', 40) ?: 'سَنَد', 'platform_tagline' => $txt('platform_tagline', 90)];
+            $set = ['platform_name' => $txt('platform_name', 40) ?: 'صاحب القرآن', 'platform_tagline' => $txt('platform_tagline', 90), 'platform_waqf' => $txt('platform_waqf', 200)];
+            $ce = strtolower($txt('contact_email', 190)); if ($ce !== '' && !filter_var($ce, FILTER_VALIDATE_EMAIL)) fail('بريد استقبال الرسائل غير صحيح'); $set['contact_email'] = $ce;
             if ($logo !== 'keep') $set['platform_logo'] = $logo;
             $set += ['beta_badge' => $txt('beta_badge', 80), 'beta_note' => $txt('beta_note', 400), 'week_start' => $int('week_start', 0, 6, 6),
                 'announce_on' => $bool('announce_on'), 'announce_title' => $txt('announce_title', 100), 'announce_text' => $txt('announce_text', 600), 'announce_audience' => $aud];

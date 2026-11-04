@@ -33,7 +33,7 @@ function mailCfg(): array {
         'enabled' => setting('smtp_enabled', '1') === '1',
         'host' => setting('smtp_host'), 'port' => (int)(setting('smtp_port', '465') ?: 465), 'secure' => setting('smtp_secure', 'ssl'),
         'user' => setting('smtp_user'), 'pass' => decSecret(setting('smtp_pass')),
-        'from_email' => setting('mail_from_email') ?: setting('smtp_user'), 'from_name' => setting('mail_from_name', 'سَنَد'),
+        'from_email' => setting('mail_from_email') ?: setting('smtp_user'), 'from_name' => setting('mail_from_name', 'صاحب القرآن'),
         'site_url' => rtrim(setting('site_url', 'https://tahfidh.ipickhost.com'), '/'),
     ];
 }
@@ -171,7 +171,7 @@ const SETTING_DEFAULTS = [
     'reg_open' => '1', 'login_password' => '1', 'login_otp_email' => '1', 'login_otp_wa' => '0', 'login_otp_sms' => '0',
     'otp_ttl' => '10', 'otp_max_attempts' => '5', 'otp_cooldown' => '60', 'otp_hour_limit' => '6',
     'otp_message' => 'رمز الدخول إلى {platform}: {code} (صالح {minutes} دقائق). لا تشاركه مع أحد.',
-    'beta_badge' => '🧪 نسخة تجريبية • مجانية حالياً', 'platform_name' => 'سَنَد', 'platform_tagline' => 'منصة متابعة الحفظ والقراءات والإجازات', 'platform_logo' => '',
+    'beta_badge' => '🧪 نسخة تجريبية • مجانية حالياً', 'platform_name' => 'صاحب القرآن', 'platform_tagline' => 'منصة متابعة الحفظ والقراءات والإجازات', 'platform_waqf' => 'وقفٌ لله تعالى لخدمة القرآن الكريم وأهله', 'contact_email' => '', 'platform_logo' => '',
     'beta_note' => 'المنصة في مرحلة التجربة والتطوير، والاستخدام مجاني خلال هذه الفترة. قد تُضاف ميزات جديدة وقد يتغير بعضها، وملاحظاتك تساعدنا على تحسينها.',
     'week_start' => '6', 'announce_on' => '0', 'announce_title' => '', 'announce_text' => '', 'announce_audience' => 'all',
     'phone_cc' => '966',

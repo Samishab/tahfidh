@@ -2,10 +2,10 @@
 
 /* ---------- تحميل بيانات الأقسام ---------- */
 async function loadAdminTab() {
-  const k = st.mt, need = { overview: ['overview'], auth: ['settings', 'mail'], platform: ['settings'], audit: ['audit', 'mail'] }[k];
+  const k = st.mt, need = { overview: ['overview'], inbox: ['inbox'], auth: ['settings', 'mail'], platform: ['settings'], audit: ['audit', 'mail'] }[k];
   if (!need) return;
   st.adm.busy = st.adm.busy || {};
-  const fetchers = { overview: () => api('admin_overview'), settings: () => api('settings_get'), mail: () => api('mail_get'), audit: () => api('audit_list') };
+  const fetchers = { overview: () => api('admin_overview'), settings: () => api('settings_get'), mail: () => api('mail_get'), audit: () => api('audit_list'), inbox: () => api('feedback_list') };
   for (const n of need) {
     if (st.adm[n] || st.adm.busy[n]) continue;
     st.adm.busy[n] = true;
@@ -23,6 +23,7 @@ function adminSection(k) {
   if (k === 'auth') return secAuth();
   if (k === 'platform') return secPlatform();
   if (k === 'audit') return secAudit();
+  if (k === 'inbox') return secInbox();
   return '';
 }
 
@@ -110,6 +111,8 @@ function secPlatform() {
         ${logo ? '<button type="button" class="btn red sm" style="margin-top:6px" data-act="adm-rm-logo">إزالة (الشعار الافتراضي)</button>' : ''}</div></div>
       <div><label class="f">اسم المنصة</label><input name="platform_name" value="${esc(p.platform_name)}" maxlength="40" required></div>
       <div><label class="f">الوصف المختصر</label><input name="platform_tagline" value="${esc(p.platform_tagline)}" maxlength="90"></div>
+      <div><label class="f">عبارة الوقف <span class="hint">(تظهر أسفل صفحة الدخول وفي الكشوف، فارغة = بلا عبارة)</span></label><input name="platform_waqf" value="${esc(p.platform_waqf)}" maxlength="200"></div>
+      <div><label class="f">بريد استقبال رسائل التواصل <span class="hint">(فارغ = بريد مدير النظام)</span></label><input name="contact_email" type="email" value="${esc(p.contact_email)}" maxlength="190" dir="ltr"></div>
       <p class="hint" style="margin:0">يظهر الاسم والشعار في صفحة الدخول وحساب المدير ورسائل البريد. أما المدارس والمعلمون المستقلون فيظهر لهم اسم وشعار حلقاتهم.</p>
       <h3 style="margin-top:6px">🧪 شارة المرحلة (صفحتا الدخول والتسجيل)</h3>
       <div><label class="f">الشارة <span class="hint">(فارغة = بلا شارة)</span></label><input name="beta_badge" value="${esc(p.beta_badge)}" maxlength="80"></div>
@@ -123,6 +126,17 @@ function secPlatform() {
       <div><label class="f">يظهر لـ</label><select name="announce_audience"><option value="all" ${p.announce_audience === 'all' ? 'selected' : ''}>الجميع</option><option value="staff" ${p.announce_audience === 'staff' ? 'selected' : ''}>المعلمين والمدراء</option><option value="parents" ${p.announce_audience === 'parents' ? 'selected' : ''}>أولياء الأمور</option></select></div>
       <button class="btn block">حفظ</button>
     </form></div>`;
+}
+
+/* ---------- صندوق الرسائل والاقتراحات ---------- */
+const FB_AR = { contact: '✉️ تواصل', suggestion: '💡 اقتراح', issue: '🐞 مشكلة', praise: '🌟 رأي / شكر' };
+function secInbox() {
+  const I = st.adm.inbox; if (!I) return admLoading(); if (I.error) return admErr(I);
+  return `<div class="card"><h3>💬 الرسائل والاقتراحات ${I.unread ? `<span class="more">${I.unread} جديدة</span>` : ''}</h3>
+    ${I.items.length ? I.items.map(x => `<div class="fb ${x.status === 'new' ? 'new' : ''}"><div class="fbh"><b>${FB_AR[x.kind] || x.kind}</b> <span>${esc(x.name || 'بدون اسم')}${x.email ? ` • <bdi dir="ltr">${esc(x.email)}</bdi>` : ''}</span><small>${fmtT(x.at)}</small></div>
+      <p>${esc(x.message)}</p>
+      <div class="row"><button class="btn light sm" data-act="fb-read" data-id="${x.id}" data-st="${x.status === 'new' ? 'read' : 'unread'}">${x.status === 'new' ? '✔ تمّت القراءة' : '↩ غير مقروءة'}</button>${x.email ? `<a class="btn ghost sm" href="mailto:${esc(x.email)}">↩ رد</a>` : ''}<button class="btn red sm" data-act="fb-del" data-id="${x.id}">حذف</button></div></div>`).join('')
+      : empty('📭', 'لا توجد رسائل بعد')}</div>`;
 }
 
 /* ---------- السجل والنسخة الاحتياطية ---------- */
@@ -141,8 +155,10 @@ function secAudit() {
 }
 
 /* ---------- أوامر ولوحات الحفظ ---------- */
-const settingsRefresh = () => { st.adm.settings = null; st.adm.mail = null; st.adm.overview = null; st.adm.audit = null; };
+const settingsRefresh = () => { st.adm.inbox = null; st.adm.settings = null; st.adm.mail = null; st.adm.overview = null; st.adm.audit = null; };
 Object.assign(acts, {
+  'fb-read': async (id, el) => { await api('feedback_update', { id: +id, action: el.dataset.st }); st.adm.inbox = null; render(); },
+  'fb-del': async id => { if (!confirm('حذف هذه الرسالة؟')) return; await api('feedback_update', { id: +id, action: 'delete' }); st.adm.inbox = null; render(); },
   'adm-reload': () => { settingsRefresh(); render(); },
   'adm-rm-logo': () => { st.tmpPlat = ''; render(); },
   'adm-mail-test': async () => {
@@ -178,7 +194,7 @@ document.addEventListener('submit', async e => {
     } else if (f.id === 'adm_wa' || f.id === 'adm_sms') {
       await api('settings_save', { group: f.id.slice(4), values: { on: ck('on'), url: f.elements.url.value, method: f.elements.method.value, body: f.elements.body.value, headers: f.elements.headers.value, clear_headers: ck('clear_headers') } });
     } else if (f.id === 'adm_platform') {
-      ['platform_name', 'platform_tagline', 'beta_badge', 'beta_note', 'announce_title', 'announce_text', 'announce_audience'].forEach(k => { v[k] = f.elements[k].value; });
+      ['platform_name', 'platform_tagline', 'platform_waqf', 'contact_email', 'beta_badge', 'beta_note', 'announce_title', 'announce_text', 'announce_audience'].forEach(k => { v[k] = f.elements[k].value; });
       v.week_start = +f.elements.week_start.value; v.announce_on = ck('announce_on');
       v.platform_logo = st.tmpPlat === undefined ? 'keep' : st.tmpPlat;
       await api('settings_save', { group: 'platform', values: v }); st.tmpPlat = undefined;

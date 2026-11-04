@@ -92,6 +92,19 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   KEY idx_user (username, at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS feedback (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  kind VARCHAR(12) NOT NULL DEFAULT 'contact',
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  email VARCHAR(190) NOT NULL DEFAULT '',
+  message TEXT NOT NULL,
+  user_id INT UNSIGNED NULL,
+  status VARCHAR(8) NOT NULL DEFAULT 'new',
+  ip VARCHAR(45) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY (status), KEY (ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS signup_requests (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   role ENUM('parent','teacher','school','solo') NOT NULL,

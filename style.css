@@ -140,7 +140,6 @@ td:first-child,th:first-child{text-align:start}
 .logo-pick{display:flex;align-items:center;gap:14px}
 .logo-pick .logo{width:64px;height:64px;box-shadow:none;border:1.5px solid var(--line)}
 
-@media (min-width:700px){body{max-width:640px;margin:auto;box-shadow:0 0 40px rgba(0,0,0,.08)}.tabbar{max-width:640px;margin:auto}}
 @media print{.tabbar,.hdr,.btn{display:none!important}}
 
 /* ===== شارات، رسائل، تقدّم ===== */
@@ -295,3 +294,36 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 
 .hdr-row .hbtn{margin-inline-end:0}.hdr-row{gap:8px}
 .rp-tbl em.q{background:#e6ecfb;color:#2f4ea1}
+
+/* ===== عبارة الوقف + التواصل ===== */
+.waqf{text-align:center;font-family:'Amiri',serif;font-size:16px;margin:18px 0 6px;position:relative}
+.auth .waqf{color:#fff;opacity:.92}main .waqf{color:var(--mut);margin:6px 0 16px}
+.fbbtn{position:relative;align-self:center;margin-top:14px;background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.45);color:#fff;border-radius:13px;padding:9px 18px;font-weight:700;cursor:pointer}
+.fb{border:1.5px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:10px}.fb.new{border-color:var(--g2);background:var(--g3)}
+.fbh{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.fbh small{margin-inline-start:auto;color:var(--mut)}
+.fb p{margin:6px 0 8px;white-space:pre-wrap}
+
+/* ===== الشاشات الأكبر: تابلت ثم حاسوب ===== */
+@media (min-width:700px){
+  .hdr{padding-inline:max(18px,calc((100% - 860px)/2))}
+  main{max-width:900px;margin-inline:auto;padding:0 18px}
+  .tabbar{max-width:900px;margin:auto}
+  .modal{align-items:center}.modal .sheet{border-radius:22px;max-width:620px}
+  .toast{bottom:30px}
+  .auth .card{max-width:480px}
+}
+@media (min-width:960px){
+  body{padding-bottom:0}body:has(.tabbar){padding-inline-start:104px}
+  .tabbar{top:0;bottom:0;inset-inline:auto;inset-inline-start:0;width:104px;max-width:none;margin:0;flex-direction:column;justify-content:flex-start;gap:4px;padding:20px 8px;border-radius:0;box-shadow:-4px 0 22px rgba(0,0,0,.07)}
+  .tabbar button{flex:none;padding:10px 0;border-radius:14px;font-size:12.5px}
+  .tabbar button:hover{background:var(--g3)}.tabbar button.on{background:var(--g3)}
+  .tabbar button.fab{transform:none;width:auto;order:-1;margin-bottom:10px}
+  .tabbar button.fab span{width:50px;height:50px;font-size:26px;border:0}
+  .hdr{padding-inline:max(28px,calc((100% - 1160px)/2))}
+  main{max-width:1200px;padding:0 28px}
+  .card{padding:20px 22px}
+  .list{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+  .toast{bottom:30px}
+  .auth{padding-inline:40px}
+}
+@media print{body{padding-inline-start:0!important}}
