@@ -119,7 +119,8 @@ const recText = r => rEnd(r) !== r.surah ? `من سورة ${Q.name(r.surah)} آ�
 /* ---------- الرسائل ---------- */
 const msgsOf = sid => db.messages.filter(m => m.studentId === +sid);
 const unread = sid => msgsOf(sid).filter(m => m.id > (db.reads[sid] || 0) && m.senderId !== db.me.id).length;
-const totalUnread = () => db.students.reduce((n, s) => n + unread(s.id), 0);
+const chOn = () => ['teacher', 'school_admin'].includes(role()) && !db.me.solo && !!db.me.school_id;
+const totalUnread = () => db.students.reduce((n, s) => n + unread(s.id), 0) + (chOn() ? unread(0) : 0);
 function markRead(sid) {
   const ms = msgsOf(sid), last = ms.length ? ms[ms.length - 1].id : 0;
   if (last > (db.reads[sid] || 0)) { db.reads[sid] = last; api('messages_read', { studentId: +sid, lastId: last }).catch(() => { }); updateTabbar(); }
@@ -148,7 +149,7 @@ function restoreNav() {
     const o = JSON.parse(sessionStorage.getItem('tahfidh_nav') || 'null'); if (!o || o.uid !== db.me.id || !NAV_VIEWS.includes(o.view)) return;
     NAV_KEYS.forEach(k => { if (o[k] !== undefined) st[k] = o[k]; });
     if (st.sid && !student(st.sid)) { st.sid = null; if (['student', 'report', 'statement', 'cert'].includes(st.view)) st.view = 'home'; }
-    if (st.thread && !student(st.thread)) st.thread = null;
+    if (st.thread && st.thread !== 'ch' && !student(st.thread)) st.thread = null;
     if (isAdmin() && st.mt) st.mtInit = true;
   } catch { }
 }
@@ -464,12 +465,14 @@ function studentForm(s) {
       <input name="prior_where" maxlength="160" style="margin-top:8px" placeholder="عند من / أين أتمّها؟ (اختياري)"></div>` : ''}
     <div><label class="f">المجموعة / الحلقة <span class="hint">(اختياري)</span></label><input name="group" value="${esc(s?.group)}" placeholder="مثال: حلقة الفجر"></div>
     <div><label class="f">أولياء الأمور المرتبطون</label>
-      ${parents.length ? `<div class="checks">${parents.map(p => `<label><input type="checkbox" name="par" value="${p.id}" ${s && s.parents.includes(p.id) ? 'checked' : ''}> ${esc(p.name)} <small class="hint">${esc(p.email || p.username)}</small></label>`).join('')}</div>` : '<p class="hint">لا يوجد أولياء أمور مسجّلون بعد — أضف ولي الأمر هنا بالأسفل.</p>'}</div>
+      ${parents.length ? `<div class="checks">${parents.map(p => `<label><input type="checkbox" name="par" value="${p.id}" ${s && s.parents.includes(p.id) ? 'checked' : ''}> ${esc(p.name)} <small class="hint">${esc(p.email || p.username)}</small>${s && s.parents.includes(p.id) && isMgr() ? ` <button type="button" class="btn light sm auto" data-act="edit-user" data-id="${p.id}">✏️ بياناته</button>` : ''}</label>`).join('')}</div>` : '<p class="hint">لا يوجد أولياء أمور مسجّلون بعد — أضف ولي الأمر هنا بالأسفل.</p>'}</div>
     <div id="np_box" class="gap" style="border:1.5px dashed var(--g2);border-radius:14px;padding:12px;background:var(--g3)"><label class="f" style="margin:0">➕ ولي أمر جديد <span class="hint">(بريده أو جواله — واحد منهما على الأقل. بالبريد يدخل برمز، وبالجوال تُعطى له كلمة مؤقتة)</span></label>
       <div class="np_row gap"><input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني (اختياري)"><input name="np_phone" type="tel" placeholder="الجوال (إن لم يكن بريد)"></div>
       <button type="button" class="btn light sm" data-act="np-add">＋ ولي أمر آخر</button></div>
     <div><label class="f">دخول الطالب بنفسه <span class="hint">(اختياري — اسم مستخدم)</span></label>
       <input name="login" value="${esc(su?.username)}" placeholder="اتركه فارغاً إن لم يكن للطالب حساب" autocapitalize="off">
+      <div class="row" style="margin-top:8px"><div><label class="f">بريد الطالب <span class="hint">(اختياري)</span></label><input name="semail" type="email" inputmode="email" autocapitalize="off" value="${esc(su?.email)}" dir="ltr"></div>
+        <div><label class="f">جوال الطالب <span class="hint">(اختياري)</span></label><input name="sphone" type="tel" inputmode="tel" value="${esc(su?.phone)}" dir="ltr"></div></div>
       ${su ? `<button type="button" class="btn light sm" style="margin-top:8px" data-act="reset-pw" data-id="${su.id}">🔑 إعادة تعيين كلمة مرور الطالب</button>` : ''}</div>
     <button class="btn block">حفظ</button>
     ${s ? `<button type="button" class="btn red block" data-act="del-student" data-id="${s.id}">🗑 حذف الطالب وكل بياناته</button>` : ''}
@@ -587,44 +590,76 @@ function viewStats() {
 }
 
 /* ---------- الرسائل ---------- */
-const AUD_AR = { parents: '👪 ولي الأمر', student: '🎓 الطالب', both: '👪🎓 كلاهما', staff: '🔒 داخلية' };
-const audChips = (cur, act) => (isAdmin() ? ['staff'] : ['parents', 'student', 'both', 'staff']).map(k => `<button type="button" class="chip ${cur === k ? 'on' : ''}" data-act="${act}" data-id="${k}">${AUD_AR[k]}</button>`).join('');
-const audHint = a => ({ parents: 'تصل إلى أولياء أمور الطلاب المختارين، ولا يراها الطالب.', student: 'تصل إلى حساب الطالب فقط، ولا يراها ولي الأمر.', both: 'يراها ولي الأمر والطالب.', staff: 'ملاحظة داخلية يراها الطاقم (المعلمون ومدير المدرسة) فقط.' }[a]);
+const AUD_AR = { parents: '👪 ولي الأمر', student: '🎓 الطالب', both: '👪🎓 ولي الأمر والطالب', staff: '👥 المعلم والإدارة', teachers: '👨‍🏫 المعلم', school: '🏫 الإدارة فقط' };
+const AUD_HINT = {
+  parents: 'تصل إلى أولياء أمور الطلاب المختارين، ولا يراها الطالب.', student: 'تصل إلى حساب الطالب فقط، ولا يراها ولي الأمر.', both: 'يراها ولي الأمر والطالب.',
+  staff: 'يراها المعلمون وإدارة المدرسة فقط.', teachers: 'يراها المعلم (والإدارة تطّلع عليها تلقائياً).', school: 'تصل إلى إدارة المدرسة فقط، ولا يراها المعلمون الآخرون.'
+};
+const schoolOf = id => db.schools.find(x => x.id === +id) || {};
+/* الخيارات المتاحة لمن يستلم الرسالة بحسب دور الكاتب وسياق المحادثة */
+function audOpts(ctx, sid) {
+  if (isAdmin()) return ['staff'];
+  if (!staff()) return schoolOf((student(sid) || {}).school_id || (db.students[0] || {}).school_id).is_solo ? ['teachers'] : ['staff', 'teachers', 'school'];
+  const solo = !!db.me.solo, mgr = role() === 'school_admin';
+  if (ctx === 'ch') return mgr ? ['staff', 'teachers'] : ['staff', 'teachers', 'school'];
+  if (solo) return ['parents', 'student', 'both'];
+  return mgr ? ['parents', 'student', 'both', 'staff'] : ['parents', 'student', 'both', 'staff', 'school'];
+}
+const audChips = (cur, act, ctx, sid) => audOpts(ctx, sid).map(k => `<button type="button" class="chip ${cur === k ? 'on' : ''}" data-act="${act}" data-id="${k}">${AUD_AR[k]}</button>`).join('');
+const audHint = a => AUD_HINT[a] || '';
+const audDef = (ctx, sid) => { const o = audOpts(ctx, sid), c = ctx === 'ch' ? st.audCh : st.aud; return o.includes(c) ? c : (o.includes('both') ? 'both' : o[0]); };
 function viewMessages() {
   if (st.thread) return viewThread();
   const rows = db.students.map(s => { const ms = msgsOf(s.id); return { s, last: ms[ms.length - 1], un: unread(s.id) }; })
     .sort((a, b) => (b.last?.id || 0) - (a.last?.id || 0));
-  const top = staff() ? `<button class="btn gold block" style="margin-bottom:12px" data-act="msg-new">✉️ رسالة جديدة — لطالب أو ولي أمر أو مجموعة أو الجميع</button>` : '';
-  if (!rows.length) return `<div class="card">${empty('💬', 'لا يوجد طلاب مرتبطون بحسابك')}</div>`;
-  return `${top}<p class="hint" style="margin:0 4px 10px">${staff() ? 'المحادثات بحسب الطالب (اضغط لفتح المحادثة والرد)' : 'أرسل ملاحظاتك واستفساراتك للمعلم'}</p>
+  const top = staff() ? `<button class="btn gold block" style="margin-bottom:10px" data-act="msg-new">✉️ رسالة جديدة — لطالب أو ولي أمر أو مجموعة أو الجميع</button>`
+    : (db.students.length ? `<button class="btn gold block" style="margin-bottom:12px" data-act="msg-new">✉️ رسالة جديدة إلى المعلم أو الإدارة</button>` : '');
+  const chm = chOn() ? msgsOf(0) : [];
+  const chRow = chOn() ? `<div class="item" data-act="open-thread" data-id="ch" style="margin-bottom:10px"><div class="avatar">🏫</div>
+    <div class="t"><b>قناة طاقم المدرسة</b><small>${chm.length ? esc((chm[chm.length - 1].senderId === db.me.id ? 'أنت: ' : chm[chm.length - 1].senderName + ': ') + chm[chm.length - 1].body.slice(0, 40)) : 'تواصل مع الإدارة والمعلمين الآخرين'}</small></div>
+    <div class="side">${unread(0) ? `<em class="bdg inl">${unread(0)}</em>` : ''}</div></div>` : '';
+  if (!rows.length && !chRow) return `<div class="card">${empty('💬', 'لا يوجد طلاب مرتبطون بحسابك')}</div>`;
+  return `${top}${chRow}<p class="hint" style="margin:0 4px 10px">${staff() ? 'محادثات الطلاب (اضغط لفتح المحادثة والرد)' : 'محادثاتك مع المعلم وإدارة المدرسة'}</p>
   <div class="list">${rows.map(({ s, last, un }) => `<div class="item" data-act="open-thread" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
     <div class="t"><b>${esc(s.name)}</b><small>${last ? esc((last.senderId === db.me.id ? 'أنت: ' : '') + last.body.slice(0, 42)) : 'لا توجد رسائل — ابدأ المحادثة'}</small></div>
     <div class="side">${last ? `<small>${fmtT(last.at)}</small>` : ''}${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`).join('')}</div>`;
 }
 function viewThread() {
-  const s = student(st.thread); if (!s) { st.thread = null; return viewMessages(); }
-  const ms = msgsOf(s.id), sf = staff(), aud = isAdmin() ? 'staff' : (st.aud || 'both');
-  setTimeout(() => { const b = $('#bub'); if (b) b.scrollTop = b.scrollHeight; markRead(s.id); }, 0);
-  const badge = m => !sf ? '' : (m.senderRole === 'parent' || m.senderRole === 'student' ? '<span class="aud">↩ رد</span>'
-    : `<span class="aud ${m.aud === 'staff' ? 'in' : ''}" ${m.senderId === db.me.id || isMgr() ? `data-act="msg-opt" data-id="${m.id}" style="cursor:pointer"` : ''}>${AUD_AR[m.aud] || ''}${m.senderId === db.me.id || isMgr() ? ' ⋯' : ''}</span>`);
+  const ch = st.thread === 'ch', sid = ch ? 0 : +st.thread, s = ch ? { id: 0, name: 'قناة طاقم المدرسة' } : student(sid);
+  if (!s || (ch && !chOn())) { st.thread = null; return viewMessages(); }
+  const ms = msgsOf(sid), sf = staff(), ctx = ch ? 'ch' : 'th', aud = audDef(ctx, sid);
+  setTimeout(() => { const b = $('#bub'); if (b) b.scrollTop = b.scrollHeight; markRead(sid); }, 0);
+  const own = m => m.senderId === db.me.id || isMgr();
+  const badge = m => (!sf && m.senderId !== db.me.id) ? '' : `<span class="aud ${m.aud === 'staff' || m.aud === 'school' || m.aud === 'teachers' ? 'in' : ''}" ${sf && own(m) ? `data-act="msg-opt" data-id="${m.id}" style="cursor:pointer"` : ''}>${(m.senderRole === 'parent' || m.senderRole === 'student') ? '↩ ' : ''}${AUD_AR[m.aud] || ''}${sf && own(m) ? ' ⋯' : ''}</span>`;
   return `<div class="card">
-    <div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="close-thread">→ رجوع</button><b>💬 ${esc(s.name)}</b></div>
+    <div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="close-thread">→ رجوع</button><b>${ch ? '🏫' : '💬'} ${esc(s.name)}</b></div>
     <div class="bub" id="bub">${ms.length ? ms.map(m => `<div class="m ${m.senderId === db.me.id ? 'mine' : ''}"><small>${esc(m.senderName)} • ${ROLE_AR[m.senderRole] || ''} ${badge(m)}</small><p>${esc(m.body)}</p><small>${fmtT(m.at)}</small></div>`).join('') : empty('💬', 'لا توجد رسائل بعد')}</div>
-    ${sf ? `<div class="hscroll" style="margin-top:10px"><span class="hint" style="align-self:center">إلى:</span>${audChips(aud, 'thr-aud')}</div><p class="hint" style="margin:6px 0 0">${audHint(aud)}</p>`
-      : '<p class="hint" style="margin:8px 0 0">رسالتك تصل إلى المعلمين وإدارة المدرسة.</p>'}
+    <div class="hscroll" style="margin-top:10px"><span class="hint" style="align-self:center">إلى:</span>${audChips(aud, 'thr-aud', ctx, sid)}</div><p class="hint" style="margin:6px 0 0">${audHint(aud)}</p>
     <form id="msgform" class="row" style="margin-top:8px;align-items:flex-end"><textarea id="msgin" rows="2" maxlength="1000" placeholder="اكتب رسالتك...">${esc(st.draft)}</textarea><button class="btn auto">إرسال</button></form>
   </div>`;
 }
-/* رسالة جديدة: اختيار المستلمين (طالب / مجموعة / الجميع) ومن يراها */
+/* رسالة جديدة للطاقم: اختيار المستلمين (طالب / مجموعة / الجميع) ومن يراها */
 function msgComposeHtml() {
-  const groups = [...new Set(db.students.map(s => s.group).filter(Boolean))], aud = st.cmAud || (isAdmin() ? 'staff' : 'parents');
+  if (!staff()) return kidComposeHtml();
+  const groups = [...new Set(db.students.map(s => s.group).filter(Boolean))], aud = audDef('cm');
   return `<h2>✉️ رسالة جديدة</h2>
   <form id="mcform" class="gap">
-    <div><label class="f">إلى من؟</label><div class="hscroll" id="mc_aud">${audChips(aud, 'mc-aud')}</div><p class="hint" id="mc_hint" style="margin:6px 0 0">${audHint(aud)}</p></div>
+    <div><label class="f">إلى من؟</label><div class="hscroll" id="mc_aud">${audChips(aud, 'mc-aud', 'cm')}</div><p class="hint" id="mc_hint" style="margin:6px 0 0">${audHint(aud)}</p></div>
     <div><label class="f">الطلاب المختارون <span class="hint" id="mc_cnt"></span></label>
       <input id="mc_q" type="search" placeholder="🔍 بحث عن طالب..." style="margin-bottom:8px">
       <div class="hscroll" style="margin-bottom:8px"><button type="button" class="chip" data-act="mc-sel" data-id="all">☑ الجميع</button><button type="button" class="chip" data-act="mc-sel" data-id="none">☐ إلغاء الكل</button>${groups.map(g => `<button type="button" class="chip" data-act="mc-sel" data-id="g:${esc(g)}">${esc(g)}</button>`).join('')}</div>
-      <div class="checks" id="mc_list" style="max-height:230px;overflow:auto">${db.students.map(s => `<label data-n="${esc(normS(s.name))}"><input type="checkbox" name="mcs" value="${s.id}" data-g="${esc(s.group || '')}" ${st.thread && +st.thread === s.id ? 'checked' : ''}> ${esc(s.name)}${s.group ? ` <small class="hint">${esc(s.group)}</small>` : ''}</label>`).join('')}</div></div>
+      <div class="checks" id="mc_list" style="max-height:240px;overflow:auto">${db.students.map(s => `<label data-n="${esc(normS(s.name + ' ' + (s.parent_names || []).join(' ')))}"><input type="checkbox" name="mcs" value="${s.id}" data-g="${esc(s.group || '')}" ${st.thread && +st.thread === s.id ? 'checked' : ''}> ${esc(s.name)}${s.group ? ` <small class="hint">${esc(s.group)}</small>` : ''}<br><small class="hint">${(s.parent_names || []).length ? '👪 ' + esc(s.parent_names.join('، ')) : 'لا يوجد ولي أمر مربوط'}${s.user_id ? ' • 🎓 له حساب' : ''}</small></label>`).join('')}</div></div>
+    <div><label class="f">الرسالة</label><textarea name="body" rows="4" maxlength="1000" required placeholder="اكتب رسالتك..."></textarea></div>
+    <button class="btn block gold">إرسال</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
+  </form>`;
+}
+/* ولي الأمر / الطالب: رسالة جديدة إلى المعلم أو الإدارة */
+function kidComposeHtml() {
+  const kids = db.students, sid0 = st.kid && kids.some(k => k.id === st.kid) ? st.kid : kids[0].id, aud = audDef('kid', sid0);
+  return `<h2>✉️ رسالة جديدة</h2>
+  <form id="kcform" class="gap">
+    ${kids.length > 1 ? `<div><label class="f">بخصوص</label><select name="sid">${kids.map(k => `<option value="${k.id}">${esc(k.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="sid" value="${sid0}"><p class="hint" style="margin:0">بخصوص: <b>${esc(kids[0].name)}</b></p>`}
+    <div><label class="f">إلى من؟</label><div class="hscroll" id="mc_aud">${audChips(aud, 'kc-aud', 'kid', sid0)}</div><p class="hint" id="mc_hint" style="margin:6px 0 0">${audHint(aud)}</p></div>
     <div><label class="f">الرسالة</label><textarea name="body" rows="4" maxlength="1000" required placeholder="اكتب رسالتك..."></textarea></div>
     <button class="btn block gold">إرسال</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
   </form>`;
@@ -874,24 +909,25 @@ const acts = {
   'open-cert': id => go('cert', { cid: +id }),
   'cert-new': id => certForm(id),
   'del-cert': async id => { if (!confirm('حذف هذه الشهادة نهائياً؟')) return; await api('cert_delete', { id: +id }); db.certs = db.certs.filter(c => c.id !== +id); go('student'); toast('تم حذف الشهادة'); },
-  'open-thread': id => go('messages', { thread: +id }),
+  'open-thread': id => go('messages', { thread: id === 'ch' ? 'ch' : +id }),
   'close-thread': () => { st.thread = null; st.draft = ''; render(); },
   logout,
   lm: id => { st.lm = id; render(); },
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
   'fs-all': async () => { st.fs = ''; try { localStorage.setItem('tahfidh_fs', ''); } catch { } await refresh(); st.adm = {}; closeModal(); render(); toast('تم عرض كل المدارس — افتح «إضافة ولي أمر» من جديد'); },
-  'msg-new': () => { st.cmAud = isAdmin() ? 'staff' : (st.aud || 'parents'); modal(msgComposeHtml()); mcCount(); },
-  'mc-aud': id => { st.cmAud = id; $('#mc_aud').innerHTML = audChips(id, 'mc-aud'); $('#mc_hint').textContent = audHint(id); },
+  'msg-new': () => { st.cmAud = audDef('cm'); st.kcAud = null; modal(msgComposeHtml()); mcCount(); },
+  'mc-aud': id => { st.cmAud = id; $('#mc_aud').innerHTML = audChips(id, 'mc-aud', 'cm'); $('#mc_hint').textContent = audHint(id); },
+  'kc-aud': id => { st.kcAud = id; const f = $('#kcform'); $('#mc_aud').innerHTML = audChips(id, 'kc-aud', 'kid', +f.sid.value); $('#mc_hint').textContent = audHint(id); },
   'mc-sel': id => {
     const boxes = [...document.querySelectorAll('#mc_list label:not([hidden]) input')];
     boxes.forEach(b => { if (id === 'all') b.checked = true; else if (id === 'none') b.checked = false; else if (b.dataset.g === id.slice(2)) b.checked = true; });
     mcCount();
   },
-  'thr-aud': id => { st.aud = id; render(); },
+  'thr-aud': id => { if (st.thread === 'ch') st.audCh = id; else st.aud = id; render(); },
   'msg-opt': id => {
     const m = db.messages.find(x => x.id === +id); if (!m) return;
-    modal(`<h2>⋯ الرسالة</h2><p class="hint" style="margin-top:0">${esc(m.body.slice(0, 120))}</p><label class="f">من يراها؟</label><div class="hscroll" style="margin-bottom:12px">${audChips(m.aud, 'msg-aud:' + m.id)}</div>
+    modal(`<h2>⋯ الرسالة</h2><p class="hint" style="margin-top:0">${esc(m.body.slice(0, 120))}</p><label class="f">من يراها؟</label><div class="hscroll" style="margin-bottom:12px">${audChips(m.aud, 'msg-aud:' + m.id, m.studentId === 0 ? 'ch' : 'th', m.studentId)}</div>
       <div class="gap"><button class="btn red block" data-act="msg-del" data-id="${m.id}">🗑 حذف الرسالة</button><button class="btn light block" data-act="close">إغلاق</button></div>`);
   },
   'msg-del': async id => { if (!confirm('حذف هذه الرسالة نهائياً؟')) return; await api('message_edit', { id: +id, action: 'delete' }); db.messages = db.messages.filter(x => x.id !== +id); closeModal(); render(); toast('تم الحذف'); },
@@ -919,10 +955,14 @@ const acts = {
   'skip-force': () => { st.skipForce = true; render(); },
   'edit-user': id => { const u = userById(id); if (!u) return toast('الحساب غير ظاهر مع فلتر المدرسة الحالي — اختر «كل المدارس»'); userForm(u); },
   'del-user': async id => { if (!confirm('حذف هذا الحساب نهائياً؟')) return; await api('user_delete', { id: +id }); await refresh(); closeModal(); render(); toast('تم الحذف'); },
-  'reset-pw': async id => {
-    if (!confirm('إنشاء كلمة مرور مؤقتة جديدة؟ ستتوقف كلمة المرور الحالية.')) return;
-    const r = await api('reset_password', { id: +id }), u = userById(id) || {};
-    showCreds(u.name || r.username, r.username, r.password, u.phone);
+  'reset-pw': id => {
+    const u = userById(id) || {};
+    modal(`<h2>🔑 كلمة مرور ${esc(u.name || '')}</h2>
+    <form id="rpform" class="gap" data-id="${+id}">
+      <div><label class="f">كلمة المرور الجديدة <span class="hint">(٦ أحرف على الأقل — اتركها فارغة لتوليد كلمة مؤقتة تلقائياً)</span></label><input name="pw" type="text" minlength="6" autocomplete="off" autocapitalize="off" dir="ltr" placeholder="اكتبها بنفسك أو اتركها فارغة"></div>
+      <label class="row" style="gap:8px;font-size:14px"><input type="checkbox" name="must" style="width:auto;flex:none" checked> يغيّرها صاحب الحساب عند أول دخول</label>
+      <p class="hint" style="margin:0">ستتوقف كلمة المرور الحالية فور الحفظ.</p>
+      <button class="btn block">حفظ</button><button type="button" class="btn light block" data-act="close">إلغاء</button></form>`);
   },
   'add-student': () => studentForm(),
   'edit-student': id => studentForm(student(id)),
@@ -978,13 +1018,22 @@ document.addEventListener('submit', run(async e => {
   }
   if (f.id === 'msgform') {
     const text = $('#msgin').value.trim(); if (!text) return;
-    const r = await api('message_send', { studentId: st.thread, body: text, aud: st.aud || 'both' });
+    const ch = st.thread === 'ch', sid = ch ? 0 : +st.thread;
+    const r = ch ? await api('message_staff', { body: text, aud: audDef('ch') }) : await api('message_send', { studentId: sid, body: text, aud: audDef('th', sid) });
     db.messages.push(r.message); st.draft = ''; render(); return;
+  }
+  if (f.id === 'rpform') {
+    const id = +f.dataset.id, r = await api('reset_password', { id, password: f.pw.value.trim(), must_change: f.must.checked }), u = userById(id) || {};
+    showCreds(u.name || r.username, r.username, r.password, u.phone, null, u.email); return;
+  }
+  if (f.id === 'kcform') {
+    const sid = +f.sid.value, r = await api('message_send', { studentId: sid, body: f.body.value, aud: st.kcAud || audDef('kid', sid) });
+    db.messages.push(r.message); closeModal(); st.kcAud = null; st.thread = sid; st.view = 'messages'; render(); toast('أُرسلت رسالتك ✔'); return;
   }
   if (f.id === 'mcform') {
     const ids = [...f.querySelectorAll('[name=mcs]:checked')].map(x => +x.value);
     if (!ids.length) return toast('اختر طالباً واحداً على الأقل');
-    const r = await api('message_multi', { studentIds: ids, aud: st.cmAud || (isAdmin() ? 'staff' : 'parents'), body: f.body.value });
+    const r = await api('message_multi', { studentIds: ids, aud: st.cmAud || audDef('cm'), body: f.body.value });
     db.messages.push(...r.messages); closeModal(); st.thread = ids.length === 1 ? ids[0] : null; st.view = 'messages'; render();
     toast(r.unreached ? `أُرسلت، لكن ${r.unreached} طالب ليس له حساب لهذه الفئة فلن تصله` : `أُرسلت إلى ${ids.length} طالب ✔`); return;
   }
@@ -1037,7 +1086,7 @@ document.addEventListener('submit', run(async e => {
       id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_ids: [...f.querySelectorAll('[name=tch]:checked')].map(x => +x.value), group: f.group.value,
       new_parents: [...f.querySelectorAll('.np_row')].map(r => ({ name: r.querySelector('[name=np_name]').value.trim(), email: r.querySelector('[name=np_email]').value.trim(), phone: r.querySelector('[name=np_phone]').value.trim() })).filter(x => x.name || x.email), program: f.program.value, hafiz: f.hafiz.checked || f.program.value === 'qiraat', hafiz_where: f.hafwhere.value, hafiz_note: f.hafnote.value,
       prior_list: [...f.querySelectorAll('[name=prk]:checked')].map(x => ({ kind: 'riwaya', riwayat: [x.value], label: RW[x.value].label })), prior_where: f.prior_where ? f.prior_where.value : '',
-      parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value
+      parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value, student_email: f.semail.value, student_phone: f.sphone.value
     });
     await refresh(); closeModal(); render(); toast('تم الحفظ ✔');
     if (r.login) showCreds(f.name.value, r.login.username, r.login.password, '');

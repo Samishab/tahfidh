@@ -158,11 +158,13 @@ function msgVis(array $u): string {
     $id = (int)$u['id'];
     if ($u['role'] === 'parent') return " AND (m.aud IN ('parents','both') OR m.sender_id=$id)";
     if ($u['role'] === 'student') return " AND (m.aud IN ('student','both') OR m.sender_id=$id)";
+    if ($u['role'] === 'teacher') return " AND (m.aud<>'school' OR m.sender_id=$id)";     // «للإدارة فقط» لا يراها المعلمون الآخرون
     return '';
 }
 function msgAud(array $u, $v): string {
-    if (in_array($u['role'], ['admin', 'parent', 'student'], true)) return 'staff';   // مدير النظام: ملاحظات داخلية؛ ولي الأمر/الطالب: ردودهم للطاقم
-    return in_array($v, ['parents', 'student', 'both', 'staff'], true) ? $v : 'both';
+    if ($u['role'] === 'admin') return 'staff';                                       // مدير النظام: ملاحظات داخلية
+    if (in_array($u['role'], ['parent', 'student'], true)) return in_array($v, ['teachers', 'school', 'staff'], true) ? $v : 'staff';   // ولي الأمر/الطالب: للمعلم أو الإدارة أو الاثنين
+    return in_array($v, ['parents', 'student', 'both', 'staff', 'teachers', 'school'], true) ? $v : 'both';
 }
 
 function bootstrap(array $u): array {
@@ -176,12 +178,19 @@ function bootstrap(array $u): array {
     foreach (q("SELECT student_id,parent_id FROM parent_student WHERE student_id IN ($in)")->fetchAll() as $r) $par[(int)$r['student_id']][] = (int)$r['parent_id'];
     $tch = [];
     foreach (q("SELECT student_id,teacher_id FROM student_teacher WHERE student_id IN ($in) ORDER BY teacher_id")->fetchAll() as $r) $tch[(int)$r['student_id']][] = (int)$r['teacher_id'];
+    $pn = [];
+    if (in_array($u['role'], ['admin', 'school_admin', 'teacher'], true))
+        foreach (q("SELECT ps.student_id,x.name FROM parent_student ps JOIN users x ON x.id=ps.parent_id WHERE ps.student_id IN ($in) ORDER BY x.name")->fetchAll() as $r) $pn[(int)$r['student_id']][] = $r['name'];
     $stOut = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'group' => $s['grp'] ?? '', 'riwaya' => $s['riwaya'] ?? 'hafs', 'program' => $s['program'] ?? 'hifz', 'hafiz' => (bool)($s['hafiz'] ?? 0),
         'hafizWhere' => $s['hafiz_where'] ?? '', 'hafizNote' => $s['hafiz_note'] ?? '', 'school_id' => $s['school_id'] ? (int)$s['school_id'] : null,
         'teacher_id' => $s['teacher_id'] ? (int)$s['teacher_id'] : null, 'user_id' => $s['user_id'] ? (int)$s['user_id'] : null,
-        'parents' => $par[(int)$s['id']] ?? [], 'teachers' => $tch[(int)$s['id']] ?? []], $students);
+        'parents' => $par[(int)$s['id']] ?? [], 'parent_names' => $pn[(int)$s['id']] ?? [], 'teachers' => $tch[(int)$s['id']] ?? []], $students);
     $recs = array_map('recOut', q("SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.student_id IN ($in) ORDER BY r.rec_date DESC, r.id DESC")->fetchAll());
     $msgs = array_reverse(array_map('msgOut', q(MSG_SQL . " WHERE m.student_id IN ($in)" . msgVis($u) . " ORDER BY m.id DESC LIMIT 600")->fetchAll()));
+    if (in_array($u['role'], ['teacher', 'school_admin'], true) && $u['school_id']) {                      // قناة طاقم المدرسة (بلا طالب)
+        $ch = array_reverse(array_map('msgOut', q(MSG_SQL . " WHERE m.student_id=0 AND m.school_id=?" . msgVis($u) . " ORDER BY m.id DESC LIMIT 300", [$u['school_id']])->fetchAll()));
+        $msgs = array_merge($msgs, $ch); usort($msgs, fn($a, $b) => $a['id'] <=> $b['id']);
+    }
     $reads = [];
     foreach (q('SELECT student_id,last_id FROM message_reads WHERE user_id=?', [$u['id']])->fetchAll() as $r) $reads[(int)$r['student_id']] = (int)$r['last_id'];
 
@@ -189,7 +198,7 @@ function bootstrap(array $u): array {
     if ($u['role'] === 'admin') $schools = q("SELECT s.id,s.name,s.logo,s.plan,s.expires_at,s.max_students,s.active,s.notes,(SELECT COUNT(*) FROM users z WHERE z.school_id=s.id AND z.solo=1) AS is_solo,(SELECT m.id FROM users m WHERE m.school_id=s.id AND m.role='school_admin' LIMIT 1) AS mgr_id,(SELECT m2.name FROM users m2 WHERE m2.school_id=s.id AND m2.role='school_admin' LIMIT 1) AS mgr_name,(SELECT COUNT(*) FROM students x WHERE x.school_id=s.id) AS ns,(SELECT COUNT(*) FROM users y WHERE y.school_id=s.id AND y.role='teacher') AS nt FROM schools s ORDER BY s.name")->fetchAll();
     else {
         $sids = array_values(array_unique(array_filter(array_merge(array_column($students, 'school_id'), [$u['school_id']]))));
-        $schools = $sids ? q('SELECT id,name,logo FROM schools WHERE id IN (' . implode(',', array_map('intval', $sids)) . ')')->fetchAll() : [];
+        $schools = $sids ? q('SELECT id,name,logo,(SELECT COUNT(*) FROM users z WHERE z.school_id=schools.id AND z.solo=1) AS is_solo FROM schools WHERE id IN (' . implode(',', array_map('intval', $sids)) . ')')->fetchAll() : [];
     }
     $schools = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'logo' => $s['logo'] ?? '', 'ns' => isset($s['ns']) ? (int)$s['ns'] : null, 'nt' => isset($s['nt']) ? (int)$s['nt'] : null,
         'plan' => $s['plan'] ?? null, 'expires_at' => $s['expires_at'] ?? null, 'max_students' => isset($s['max_students']) ? (int)$s['max_students'] : null,
@@ -343,6 +352,14 @@ try {
         $id = (int)db()->lastInsertId();
         out(['message' => msgOut(q(MSG_SQL . ' WHERE m.id=?', [$id])->fetch())]);
     }
+    case 'message_staff': {                                                   // رسالة بين طاقم المدرسة (معلمون / إدارة) بلا طالب
+        $u = need('teacher', 'school_admin'); $text = str('body', 1000); $school = (int)$u['school_id'];
+        if ($text === '') fail('اكتب الرسالة'); if (!$school) fail('غير مصرح', 403);
+        $aud = in_array(body()['aud'] ?? '', ['staff', 'teachers', 'school'], true) ? body()['aud'] : 'staff';
+        if ($u['role'] === 'school_admin' && $aud === 'school') $aud = 'staff';
+        q('INSERT INTO messages (student_id,sender_id,body,aud,school_id) VALUES (0,?,?,?,?)', [$u['id'], $text, $aud, $school]);
+        out(['message' => msgOut(q(MSG_SQL . ' WHERE m.id=?', [(int)db()->lastInsertId()])->fetch())]);
+    }
     case 'message_multi': {                                                   // رسالة لعدة طلاب/أولياء دفعة واحدة (مجموعة أو الجميع)
         $u = need('admin', 'school_admin', 'teacher'); $b = body(); $text = str('body', 1000);
         $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', is_array($b['studentIds'] ?? null) ? $b['studentIds'] : [])))), 0, 300);
@@ -367,19 +384,21 @@ try {
         $m = q('SELECT * FROM messages WHERE id=?', [$id])->fetch();
         if (!$m) fail('الرسالة غير موجودة', 404);
         if ((int)$m['sender_id'] !== (int)$u['id'] && !in_array($u['role'], ['admin', 'school_admin'], true)) fail('غير مصرح', 403);
-        if (!canSee($u, (int)$m['student_id'])) fail('غير مصرح', 403);
+        if ((int)$m['student_id'] === 0 ? ($u['role'] !== 'admin' && (int)$m['school_id'] !== (int)$u['school_id']) : !canSee($u, (int)$m['student_id'])) fail('غير مصرح', 403);
         if (($b['action'] ?? '') === 'delete') q('DELETE FROM messages WHERE id=?', [$id]);
         else q('UPDATE messages SET aud=? WHERE id=?', [msgAud($u, $b['aud'] ?? ''), $id]);
         out(['ok' => true]);
     }
     case 'messages_read': {
         $u = need(); $sid = (int)(body()['studentId'] ?? 0); $last = (int)(body()['lastId'] ?? 0);
-        if (canSee($u, $sid))
+        if ($sid === 0 ? (in_array($u['role'], ['teacher', 'school_admin'], true) && $u['school_id']) : canSee($u, $sid))
             q('INSERT INTO message_reads (user_id,student_id,last_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE last_id=GREATEST(last_id,VALUES(last_id))', [$u['id'], $sid, $last]);
         out(['ok' => true]);
     }
     case 'poll': {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
+        if ($u['role'] === 'admin') $w = 'm.student_id>0';
+        elseif (in_array($u['role'], ['teacher', 'school_admin'], true) && $u['school_id']) { $w = "($w OR (m.student_id=0 AND m.school_id=?))"; $p[] = (int)$u['school_id']; }
         out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w" . msgVis($u) . " ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
             'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn()
                 : ($u['role'] === 'school_admin' ? (int)q("SELECT COUNT(*) FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher')", [$u['school_id']])->fetchColumn() : 0)]);
@@ -479,8 +498,10 @@ try {
         $u = q('SELECT username,role,school_id FROM users WHERE id=?', [$id])->fetch();
         if (!$u) fail('مستخدم غير موجود', 404);
         if ($me['role'] === 'school_admin' && (!in_array($u['role'], ['teacher', 'parent', 'student'], true) || !mgrOwns($me, $u['school_id']))) fail('غير مصرح', 403);
-        $pw = genPass();
-        q('UPDATE users SET pass_hash=?, must_change=1 WHERE id=?', [password_hash($pw, PASSWORD_DEFAULT), $id]);
+        $rb = body(); $pwIn = (string)($rb['password'] ?? '');                      // كلمة مرور يحددها المدير يدوياً، أو تُولَّد تلقائياً
+        if ($pwIn !== '' && mb_strlen($pwIn) < 6) fail('كلمة المرور ٦ أحرف على الأقل');
+        $pw = $pwIn !== '' ? $pwIn : genPass(); $must = (!array_key_exists('must_change', $rb) || !empty($rb['must_change']) || $pwIn === '') ? 1 : 0;
+        q('UPDATE users SET pass_hash=?, must_change=? WHERE id=?', [password_hash($pw, PASSWORD_DEFAULT), $must, $id]);
         audit('reset_password', $u['username'], 'user:' . $id);
         out(['username' => $u['username'], 'password' => $pw]);
     }
@@ -507,6 +528,12 @@ try {
         if ($sa && !$tids && !empty($me['solo'])) $tids = [(int)$me['id']];
         $parents = array_values(array_unique(array_map('intval', is_array($b['parent_ids'] ?? null) ? $b['parent_ids'] : [])));
         $login = normUser(str('login_username', 60));
+        $hasContact = array_key_exists('student_email', $b) || array_key_exists('student_phone', $b);
+        $sEmail = strtolower(str('student_email', 190)); $sPhone = preg_replace('/[^\d+]/', '', str('student_phone', 30));
+        if ($sEmail !== '' && !filter_var($sEmail, FILTER_VALIDATE_EMAIL)) fail('بريد الطالب غير صحيح');
+        $ouid = $id ? (int)q('SELECT user_id FROM students WHERE id=?', [$id])->fetchColumn() : 0;
+        if ($sEmail !== '' && q('SELECT 1 FROM users WHERE email=? AND id<>?', [$sEmail, $ouid])->fetchColumn()) fail('بريد الطالب مستخدم لحساب آخر');
+        if ($login === '' && ($sEmail !== '' || $sPhone !== '')) $login = $sEmail !== '' ? $sEmail : normUser($sPhone);      // بريد/جوال الطالب يكفيان اسماً للدخول
         $program = ($b['program'] ?? 'hifz') === 'qiraat' ? 'qiraat' : 'hifz'; $hafiz = !empty($b['hafiz']) ? 1 : 0;
         $hw = str('hafiz_where', 160); $hn = str('hafiz_note', 300);
         $priors = is_array($b['prior_list'] ?? null) ? array_slice($b['prior_list'], 0, 30) : [];
@@ -572,10 +599,13 @@ try {
         $uid = $old ? (int)$old['user_id'] : 0; $cred = null;
         if ($login !== '') {
             uniqueUsername($login, $uid);
-            if ($uid) q('UPDATE users SET username=?, name=?, school_id=? WHERE id=?', [$login, $name, $school, $uid]);
+            if ($uid) {
+                q('UPDATE users SET username=?, name=?, school_id=? WHERE id=?', [$login, $name, $school, $uid]);
+                if ($hasContact) q('UPDATE users SET email=?, phone=? WHERE id=?', [$sEmail ?: null, $sPhone, $uid]);
+            }
             else {
                 $pw = genPass();
-                q("INSERT INTO users (username,name,role,school_id,pass_hash,must_change) VALUES (?,?,'student',?,?,1)", [$login, $name, $school, password_hash($pw, PASSWORD_DEFAULT)]);
+                q("INSERT INTO users (username,name,role,school_id,email,phone,pass_hash,must_change) VALUES (?,?,'student',?,?,?,?,1)", [$login, $name, $school, $sEmail ?: null, $sPhone, password_hash($pw, PASSWORD_DEFAULT)]);
                 $uid = (int)db()->lastInsertId();
                 $cred = ['username' => $login, 'password' => $pw];
             }

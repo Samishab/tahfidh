@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS messages (
   sender_id INT UNSIGNED NULL,
   body TEXT NOT NULL,
   aud VARCHAR(8) NOT NULL DEFAULT 'both',
+  school_id INT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_student (student_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
