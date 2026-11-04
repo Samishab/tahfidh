@@ -30,7 +30,7 @@ const isAdmin = () => role() === 'admin';                         // مدير ا
 const isMgr = () => role() === 'admin' || role() === 'school_admin'; // مدير النظام أو مدير مدرسة
 const staff = () => role() === 'admin' || role() === 'school_admin' || role() === 'teacher';
 const roleLabel = u => u.solo ? 'معلم مستقل' : ROLE_AR[u.role];
-const platformBrand = () => { const b = (db.app && db.app.brand) || (st.site && st.site.brand) || {}; return { name: b.name || 'صاحب القرآن', tagline: b.tagline || '', logo: b.logo || '', waqf: b.waqf !== undefined ? b.waqf : 'وقفٌ لله تعالى لخدمة القرآن الكريم وأهله' }; };
+const platformBrand = () => { const b = (db.app && db.app.brand) || (st.site && st.site.brand) || {}; return { name: b.name || 'صاحب القرآن', tagline: b.tagline || '', logo: b.logo || '', about: b.about || '', waqf: b.waqf !== undefined ? b.waqf : 'وقفٌ لله تعالى لخدمة القرآن الكريم وأهله' }; };
 const brand = () => db.school || platformBrand();                           // مدير النظام: هوية المنصة؛ غيره: هوية مدرسته
 const brandFor = id => db.schools.find(x => x.id === +id) || brand();          // هوية مدرسة الطالب في الكشوف المطبوعة
 const teacherNames = s => (s.teachers || (s.teacher_id ? [s.teacher_id] : [])).map(id => (userById(id) || (+id === db.me.id ? db.me : null) || {}).name).filter(Boolean).join('، ');
@@ -148,7 +148,7 @@ const NAV_KEYS = ['view', 'sid', 'thread', 'mt', 'ro', 'mo', 'sp', 'sfrom', 'sto
 function saveNav() {
   try { if (!db.me || ['verify', 'signup', 'feedback'].includes(st.view)) return; const o = { uid: db.me.id }; NAV_KEYS.forEach(k => { o[k] = st[k]; }); sessionStorage.setItem('tahfidh_nav', JSON.stringify(o)); } catch { }
 }
-const NAV_VIEWS = ['home', 'add', 'students', 'student', 'stats', 'search', 'settings', 'report', 'monthly', 'cert', 'statement', 'messages', 'manage', 'account'];
+const NAV_VIEWS = ['about', 'home', 'add', 'students', 'student', 'stats', 'search', 'settings', 'report', 'monthly', 'cert', 'statement', 'messages', 'manage', 'account'];
 function restoreNav() {
   try {
     const o = JSON.parse(sessionStorage.getItem('tahfidh_nav') || 'null'); if (!o || o.uid !== db.me.id || !NAV_VIEWS.includes(o.view)) return;
@@ -237,8 +237,31 @@ function renderFeedback() {
       : `${feedbackForm()}<button type="button" class="btn light block" style="margin-top:8px" data-act="to-login">رجوع</button>`}</div>
     ${waqfLine()}</div>`;
 }
-const waqfTop = () => { const w = platformBrand().waqf; return w ? `<div class="waqf-top">${esc(w)}</div>` : ''; };
+const waqfTop = () => { const b = platformBrand(); return `<div class="waqf-top"><button type="button" class="lnk" data-act="about">منصة ${esc(b.name)}</button>${b.waqf ? ' <span class="sep">•</span> ' + esc(b.waqf) : ''}</div>`; };
 const waqfLine = () => { const w = platformBrand().waqf; return w ? `<div class="waqf">${esc(w)}</div>` : ''; };
+/* ---- صفحة «عن المنصة» + نموذج التواصل (عامة، تظهر قبل الدخول وبعده) ---- */
+function aboutHtml(txt) {
+  const out = []; let list = [];
+  const flush = () => { if (list.length) { out.push(`<ul class="ab-ul">${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`); list = []; } };
+  String(txt || '').split('\n').forEach(l => {
+    const s = l.trim();
+    if (!s) { flush(); return; }
+    if (/^[-•]\s+/.test(s)) { list.push(s.replace(/^[-•]\s+/, '')); return; }
+    flush();
+    out.push(/[؟?:]$/.test(s) && s.length < 60 ? `<h3 class="ab-h">${esc(s)}</h3>` : `<p>${esc(s)}</p>`);
+  });
+  flush(); return out.join('');
+}
+function aboutCards() {
+  const b = platformBrand();
+  return `<div class="card about"><div class="ab-top"><img class="logo" src="${esc(b.logo) || 'icon.svg'}" alt=""><div><h2>منصة ${esc(b.name)}</h2>${b.tagline ? `<small class="hint">${esc(b.tagline)}</small>` : ''}</div></div>
+    <div class="ab-body">${aboutHtml(b.about)}</div></div>
+  <div class="card"><h3>💬 نسعد بتواصلكم ومقترحاتكم</h3>${st.fbDone ? `<div class="empty"><span class="ico">✅</span><b>وصلتنا رسالتك، جزاك الله خيراً</b></div>` : feedbackForm()}</div>`;
+}
+function viewAbout() { return aboutCards() + `<div class="card"><button class="btn light block" data-act="nav" data-id="home">رجوع للرئيسية</button></div>`; }
+function renderAbout() {
+  $('#app').innerHTML = `<div class="auth ab-page"><div class="ab-wrap">${waqfTop()}${aboutCards()}<button type="button" class="btn light block" data-act="to-login">رجوع إلى تسجيل الدخول</button></div></div>`;
+}
 function renderSignup() {
   const d = st.signupDone, br = platformBrand();
   $('#app').innerHTML = `
@@ -279,7 +302,7 @@ const TITLES = {
   home: () => staff() ? ['الرئيسية', ''] : [role() === 'parent' ? 'أبنائي' : 'متابعتي', ''],
   add: () => ['تسجيل تسميع', 'حفظ جديد أو مراجعة'], students: () => ['الطلاب', ''], student: () => ['ملف الطالب', ''],
   stats: () => ['الإحصائيات', 'أسبوعية وشهرية'], report: () => ['التقرير الشهري', 'قابل للطباعة PDF'], settings: () => ['الإعدادات', 'القراءات'], monthly: () => ['الكشف الشهري', 'إحصائيات الحلقة'], cert: () => ['الشهادة', 'قابلة للطباعة'], statement: () => ['كشف التسميع', 'للفترة المختارة'], messages: () => ['الرسائل', 'ملاحظات واستفسارات'],
-  manage: () => ['الإدارة', 'لوحة التحكم والحسابات'], account: () => ['حسابي', ''], search: () => ['البحث', 'في حدود صلاحياتك']
+  about: () => ['عن المنصة', ''], manage: () => ['الإدارة', 'لوحة التحكم والحسابات'], account: () => ['حسابي', ''], search: () => ['البحث', 'في حدود صلاحياتك']
 };
 function tabsHtml() {
   const v = st.view, n = totalUnread();
@@ -604,7 +627,7 @@ function viewMessages() {
   const convs = peersList().map(p => ({ p, last: dmOf(p).slice(-1)[0], un: dmUnread(p), i: cuInfo(p) })).sort(THREAD_SORT)
     .filter(c => !q || normS(c.i.n + ' ' + c.i.sub).includes(q));
   const has = db.contacts.groups.length > 0;
-  const setBtn = isMgr() ? `<button class="btn light sm auto" data-act="chat-cfg" title="صلاحيات التواصل">⚙️ صلاحيات التواصل</button>` : '';
+  const setBtn = role() === 'school_admin' ? `<button class="btn light sm auto" data-act="chat-cfg" title="صلاحيات التواصل">⚙️ صلاحيات التواصل</button>` : '';
   return `<div class="row" style="margin-bottom:12px">${has ? '<button class="btn gold" data-act="msg-new">✉️ رسالة جديدة</button>' : ''}${setBtn}</div>
   ${peersList().length > 6 ? `<input id="cq" type="search" placeholder="🔍 بحث في المحادثات..." value="${esc(st.cq || '')}" style="margin-bottom:10px">` : ''}
   ${convs.length ? `<div class="list">${convs.map(({ p, last, un, i }) => `<div class="item" data-act="open-thread" data-id="${p}"><div class="avatar">${initial(i.n)}</div>
@@ -639,7 +662,7 @@ function chatCfgHtml(sid) {
   const sw2 = (n, l, on, h) => `<label class="sw"><span>${l}<small>${h}</small></span><input type="checkbox" name="${n}" ${on ? 'checked' : ''}></label>`;
   return `<h2>⚙️ صلاحيات التواصل</h2>
   <form id="ccform" class="gap" data-sid="${sc.id || ''}">
-    ${isAdmin() && db.schools.length > 1 ? `<div><label class="f">المدرسة</label><select name="school" id="cc_school">${db.schools.map(x => `<option value="${x.id}" ${x.id === sc.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : (sc.name ? `<p class="hint" style="margin:0">${esc(sc.name)}</p>` : '')}
+    ${sc.name ? `<p class="hint" style="margin:0">${esc(sc.name)} — الصلاحيات يضبطها مدير المدرسة (أو المعلم المستقل) وحده</p>` : ''}
     ${sw2('st_teachers', 'الطالب يراسل بقية المعلمين', c.st_teachers, 'إضافة إلى معلميه ومدير المدرسة وولي أمره (يعمل دائماً)')}
     ${sw2('st_students', 'الطالب يراسل الطلاب الآخرين', c.st_students, 'طلاب المدرسة الذين لهم حسابات')}
     ${sw2('pa_teachers', 'ولي الأمر يراسل بقية المعلمين', c.pa_teachers, 'إضافة إلى معلمي أبنائه وإدارة المدرسة (يعمل دائماً)')}
@@ -815,8 +838,8 @@ function render() {
   try { document.title = (db.me ? brand() : platformBrand()).name; } catch { }
   if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>${esc(platformBrand().name)}</h1><p>جارٍ التحميل...</p></div></div>`; return; }
   if (st.view === 'verify') return renderVerify();
-  if (!db.me) { if (st.view === 'feedback') return renderFeedback(); if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
-  const views = { home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, search: viewSearch, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
+  if (!db.me) { if (st.view === 'about') return renderAbout(); if (st.view === 'feedback') return renderFeedback(); if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
+  const views = { about: viewAbout, home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, search: viewSearch, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
   if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
   shell(views[st.view]());
@@ -907,6 +930,7 @@ const acts = {
   'chat-cfg': () => modal(chatCfgHtml(db.me.school_id || (db.schools[0] || {}).id)),
   'em-cancel': () => { st.emv = null; render(); },
   hs: (d, el) => { const s = el.parentElement.querySelector('.hscroll'); if (s) s.scrollBy({ left: +d * 220, behavior: 'smooth' }); },
+  about: async () => { const r = await api('feedback_token'); st.tk = r.tk; st.fbDone = false; if (db.me) go('about'); else { st.view = 'about'; render(); scrollTo(0, 0); } },
   feedback: async () => {
     const r = await api('feedback_token'); st.tk = r.tk; st.fbDone = false;
     if (db.me) modal(`<h2>💬 تواصل واقتراحات</h2>${feedbackForm()}`); else { st.view = 'feedback'; render(); }
@@ -999,7 +1023,7 @@ document.addEventListener('submit', run(async e => {
   }
   if (f.id === 'fbform') {
     await api('feedback_send', { kind: f.kind.value, name: f.name.value, email: f.email.value, message: f.message.value, website: f.website.value, tk: st.tk });
-    if (db.me) { closeModal(); toast('وصلتنا رسالتك، جزاك الله خيراً ✔'); } else { st.fbDone = true; render(); }
+    if (st.view === 'about') { st.fbDone = true; render(); toast('وصلتنا رسالتك، جزاك الله خيراً ✔'); } else if (db.me) { closeModal(); toast('وصلتنا رسالتك، جزاك الله خيراً ✔'); } else { st.fbDone = true; render(); }
     return;
   }
   if (f.id === 'rpform') {
@@ -1012,8 +1036,7 @@ document.addEventListener('submit', run(async e => {
     db.dm.push(r.message); st.draft = ''; render(); return;
   }
   if (f.id === 'ccform') {
-    const sid = f.school ? +f.school.value : +f.dataset.sid;
-    const r = await api('chat_settings', { school_id: sid, st_teachers: f.st_teachers.checked, st_students: f.st_students.checked, pa_teachers: f.pa_teachers.checked });
+    const r = await api('chat_settings', { st_teachers: f.st_teachers.checked, st_students: f.st_students.checked, pa_teachers: f.pa_teachers.checked });
     const sc = db.schools.find(x => x.id === r.school_id); if (sc) sc.chat = r.chat; closeModal(); toast('تم حفظ صلاحيات التواصل ✔'); return;
   }
   if (f.id === 'signupform') {
@@ -1081,7 +1104,6 @@ document.addEventListener('submit', run(async e => {
 
 document.addEventListener('change', run(async e => {
   const t = e.target;
-  if (t.id === 'cc_school') { const sc = db.schools.find(x => x.id === +t.value) || {}, c = sc.chat || {}, f = $('#ccform'); ['st_teachers', 'st_students', 'pa_teachers'].forEach(k => { f[k].checked = !!c[k]; }); }
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
   if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }

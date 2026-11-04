@@ -112,6 +112,7 @@ function secPlatform() {
       <div><label class="f">اسم المنصة</label><input name="platform_name" value="${esc(p.platform_name)}" maxlength="40" required></div>
       <div><label class="f">الوصف المختصر</label><input name="platform_tagline" value="${esc(p.platform_tagline)}" maxlength="90"></div>
       <div><label class="f">عبارة الوقف <span class="hint">(تظهر أسفل صفحة الدخول وفي الكشوف، فارغة = بلا عبارة)</span></label><input name="platform_waqf" value="${esc(p.platform_waqf)}" maxlength="200"></div>
+      <div><label class="f">نص صفحة «عن المنصة» <span class="hint">(سطر فارغ يفصل الفقرات، وسطر يبدأ بـ «- » يصير نقطة، وسطر ينتهي بـ «؟» عنوان فرعي)</span></label><textarea name="about_text" rows="12" maxlength="4000">${esc(p.about_text)}</textarea></div>
       <div><label class="f">بريد استقبال رسائل التواصل <span class="hint">(فارغ = بريد مدير النظام)</span></label><input name="contact_email" type="email" value="${esc(p.contact_email)}" maxlength="190" dir="ltr"></div>
       <p class="hint" style="margin:0">يظهر الاسم والشعار في صفحة الدخول وحساب المدير ورسائل البريد. أما المدارس والمعلمون المستقلون فيظهر لهم اسم وشعار حلقاتهم.</p>
       <h3 style="margin-top:6px">🧪 شارة المرحلة (صفحتا الدخول والتسجيل)</h3>
@@ -194,7 +195,7 @@ document.addEventListener('submit', async e => {
     } else if (f.id === 'adm_wa' || f.id === 'adm_sms') {
       await api('settings_save', { group: f.id.slice(4), values: { on: ck('on'), url: f.elements.url.value, method: f.elements.method.value, body: f.elements.body.value, headers: f.elements.headers.value, clear_headers: ck('clear_headers') } });
     } else if (f.id === 'adm_platform') {
-      ['platform_name', 'platform_tagline', 'platform_waqf', 'contact_email', 'beta_badge', 'beta_note', 'announce_title', 'announce_text', 'announce_audience'].forEach(k => { v[k] = f.elements[k].value; });
+      ['platform_name', 'platform_tagline', 'platform_waqf', 'about_text', 'contact_email', 'beta_badge', 'beta_note', 'announce_title', 'announce_text', 'announce_audience'].forEach(k => { v[k] = f.elements[k].value; });
       v.week_start = +f.elements.week_start.value; v.announce_on = ck('announce_on');
       v.platform_logo = st.tmpPlat === undefined ? 'keep' : st.tmpPlat;
       await api('settings_save', { group: 'platform', values: v }); st.tmpPlat = undefined;

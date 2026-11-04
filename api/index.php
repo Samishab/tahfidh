@@ -227,8 +227,15 @@ function dmContacts(array $u): array {
     $all = [];
     foreach ($G as $g) $all = array_merge($all, $g['ids']);
     $live = $all ? array_flip($ids('SELECT id FROM users WHERE active=1 AND id IN (' . implode(',', array_unique($all)) . ')')) : [];
+    $want = $role === 'admin' ? ['parents' => 'أولياء الأمور', 'students' => 'الطلاب', 'teachers' => 'المعلمون', 'managers' => 'مدراء المدارس والمعلمون المستقلون']
+        : ($role === 'school_admin' ? ($solo ? ['parents' => 'أولياء الأمور', 'students' => 'الطلاب', 'platform' => 'إدارة المنصة'] : ['parents' => 'أولياء الأمور', 'students' => 'الطلاب', 'teachers' => 'المعلمون', 'platform' => 'إدارة المنصة']) : []);
+    foreach ($want as $k => $label) if (!isset($G[$k])) $G[$k] = ['key' => $k, 'label' => $label, 'ids' => []];
     $out = [];
-    foreach ($G as $g) { $g['ids'] = array_values(array_filter($g['ids'], fn($x) => isset($live[$x]))); if ($g['ids']) $out[] = $g; }
+    foreach ($want ? array_merge(array_flip(array_keys($want)), $G) : $G as $g) {
+        if (!is_array($g)) continue;
+        $g['ids'] = array_values(array_filter($g['ids'], fn($x) => isset($live[$x])));
+        if ($g['ids'] || isset($want[$g['key']])) $out[] = $g;
+    }
     return $out;
 }
 function dmInfo(array $ids, array $viewer): array {
@@ -317,7 +324,7 @@ function bootstrap(array $u): array {
         $aud = cfgv('announce_audience'); $isStaff = in_array($u['role'], ['admin', 'school_admin', 'teacher'], true);
         if ($aud === 'all' || ($aud === 'staff' && $isStaff) || ($aud === 'parents' && $u['role'] === 'parent')) $ann = ['title' => cfgv('announce_title'), 'text' => cfgv('announce_text')];
     }
-    $res['app'] = ['week_start' => max(0, min(6, (int)cfgv('week_start'))), 'announce' => $ann, 'brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo'), 'waqf' => cfgv('platform_waqf')]];
+    $res['app'] = ['week_start' => max(0, min(6, (int)cfgv('week_start'))), 'announce' => $ann, 'brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo'), 'waqf' => cfgv('platform_waqf'), 'about' => cfgv('about_text')]];
     return $res;
 }
 
@@ -458,9 +465,9 @@ try {
         if ($peer > 0) q('INSERT INTO dm_reads (user_id,peer_id,last_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE last_id=GREATEST(last_id,VALUES(last_id))', [$u['id'], $peer, $last]);
         out(['ok' => true]);
     }
-    case 'chat_settings': {                                                   // صلاحيات التواصل لمدرسة (مدير المدرسة/المعلم المستقل لمدرسته، ومدير النظام لأي مدرسة)
-        $me = need('admin', 'school_admin'); $b = body();
-        $sid = $me['role'] === 'admin' ? (int)($b['school_id'] ?? 0) : (int)$me['school_id'];
+    case 'chat_settings': {                                                   // صلاحيات التواصل: يضبطها مدير المدرسة أو المعلم المستقل لمدرسته فقط
+        $me = need('school_admin'); $b = body();
+        $sid = (int)$me['school_id'];
         if (!$sid || !q('SELECT 1 FROM schools WHERE id=?', [$sid])->fetchColumn()) fail('مدرسة غير صحيحة');
         $f = fn($k) => !empty($b[$k]) ? 1 : 0;
         q('UPDATE schools SET chat_st_teachers=?, chat_st_students=?, chat_pa_teachers=? WHERE id=?', [$f('st_teachers'), $f('st_students'), $f('pa_teachers'), $sid]);
@@ -1012,7 +1019,7 @@ try {
 
     /* ----- معلومات عامة قبل الدخول (الشارة، طرق الدخول، التسجيل) ----- */
     case 'site_info':
-        out(['brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo'), 'waqf' => cfgv('platform_waqf')], 'beta' => ['badge' => cfgv('beta_badge'), 'note' => cfgv('beta_note')], 'reg_open' => cfgv('reg_open') === '1',
+        out(['brand' => ['name' => cfgv('platform_name'), 'tagline' => cfgv('platform_tagline'), 'logo' => cfgv('platform_logo'), 'waqf' => cfgv('platform_waqf'), 'about' => cfgv('about_text')], 'beta' => ['badge' => cfgv('beta_badge'), 'note' => cfgv('beta_note')], 'reg_open' => cfgv('reg_open') === '1',
             'methods' => ['password' => cfgv('login_password') === '1', 'email' => cfgv('login_otp_email') === '1' && cfgv('smtp_enabled') === '1',
                 'wa' => cfgv('login_otp_wa') === '1' && cfgv('gw_wa_on') === '1', 'sms' => cfgv('login_otp_sms') === '1' && cfgv('gw_sms_on') === '1']]);
 
@@ -1074,7 +1081,7 @@ try {
         need('admin'); $g = fn(array $ks) => array_combine($ks, array_map('cfgv', $ks));
         $gw = fn($c) => ['on' => cfgv("gw_{$c}_on") === '1', 'url' => cfgv("gw_{$c}_url"), 'method' => cfgv("gw_{$c}_method"), 'body' => cfgv("gw_{$c}_body"), 'has_headers' => decSecret(cfgv("gw_{$c}_headers")) !== ''];
         out(['auth' => $g(['reg_open', 'login_password', 'login_otp_email', 'login_otp_wa', 'login_otp_sms', 'otp_ttl', 'otp_max_attempts', 'otp_cooldown', 'otp_hour_limit', 'otp_message', 'phone_cc']),
-            'platform' => $g(['platform_name', 'platform_tagline', 'platform_waqf', 'contact_email', 'platform_logo', 'beta_badge', 'beta_note', 'week_start', 'announce_on', 'announce_title', 'announce_text', 'announce_audience']), 'wa' => $gw('wa'), 'sms' => $gw('sms')]);
+            'platform' => $g(['platform_name', 'platform_tagline', 'platform_waqf', 'about_text', 'contact_email', 'platform_logo', 'beta_badge', 'beta_note', 'week_start', 'announce_on', 'announce_title', 'announce_text', 'announce_audience']), 'wa' => $gw('wa'), 'sms' => $gw('sms')]);
     }
     case 'settings_save': {
         need('admin'); $b = body(); $grp = (string)($b['group'] ?? ''); $v = is_array($b['values'] ?? null) ? $b['values'] : [];
@@ -1089,7 +1096,7 @@ try {
             $aud = in_array($v['announce_audience'] ?? '', ['all', 'staff', 'parents'], true) ? $v['announce_audience'] : 'all';
             $logo = (string)($v['platform_logo'] ?? 'keep');
             if ($logo !== 'keep' && $logo !== '' && (!str_starts_with($logo, 'data:image/') || strlen($logo) > 400000)) fail('الشعار غير صالح');
-            $set = ['platform_name' => $txt('platform_name', 40) ?: 'صاحب القرآن', 'platform_tagline' => $txt('platform_tagline', 90), 'platform_waqf' => $txt('platform_waqf', 200)];
+            $set = ['platform_name' => $txt('platform_name', 40) ?: 'صاحب القرآن', 'platform_tagline' => $txt('platform_tagline', 90), 'platform_waqf' => $txt('platform_waqf', 200), 'about_text' => $txt('about_text', 4000)];
             $ce = strtolower($txt('contact_email', 190)); if ($ce !== '' && !filter_var($ce, FILTER_VALIDATE_EMAIL)) fail('بريد استقبال الرسائل غير صحيح'); $set['contact_email'] = $ce;
             if ($logo !== 'keep') $set['platform_logo'] = $logo;
             $set += ['beta_badge' => $txt('beta_badge', 80), 'beta_note' => $txt('beta_note', 400), 'week_start' => $int('week_start', 0, 6, 6),
