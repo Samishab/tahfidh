@@ -153,6 +153,8 @@ function userOut(array $u): array {
         'last_login' => $u['last_login'] ?? null];
 }
 const MSG_SQL = 'SELECT m.*, u.name sname, u.role srole FROM messages m LEFT JOIN users u ON u.id=m.sender_id';
+/** رسائل مدير النظام ملاحظات داخلية: لا تصل إلى ولي الأمر ولا إلى الطالب */
+function msgHide(array $u): string { return in_array($u['role'], ['parent', 'student'], true) ? " AND (u.role IS NULL OR u.role<>'admin')" : ''; }
 
 function bootstrap(array $u): array {
     [$w, $p] = scope($u);
@@ -170,7 +172,7 @@ function bootstrap(array $u): array {
         'teacher_id' => $s['teacher_id'] ? (int)$s['teacher_id'] : null, 'user_id' => $s['user_id'] ? (int)$s['user_id'] : null,
         'parents' => $par[(int)$s['id']] ?? [], 'teachers' => $tch[(int)$s['id']] ?? []], $students);
     $recs = array_map('recOut', q("SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.student_id IN ($in) ORDER BY r.rec_date DESC, r.id DESC")->fetchAll());
-    $msgs = array_reverse(array_map('msgOut', q(MSG_SQL . " WHERE m.student_id IN ($in) ORDER BY m.id DESC LIMIT 600")->fetchAll()));
+    $msgs = array_reverse(array_map('msgOut', q(MSG_SQL . " WHERE m.student_id IN ($in)" . msgHide($u) . " ORDER BY m.id DESC LIMIT 600")->fetchAll()));
     $reads = [];
     foreach (q('SELECT student_id,last_id FROM message_reads WHERE user_id=?', [$u['id']])->fetchAll() as $r) $reads[(int)$r['student_id']] = (int)$r['last_id'];
 
@@ -340,7 +342,7 @@ try {
     }
     case 'poll': {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
-        out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
+        out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w" . msgHide($u) . " ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
             'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn()
                 : ($u['role'] === 'school_admin' ? (int)q("SELECT COUNT(*) FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher')", [$u['school_id']])->fetchColumn() : 0)]);
     }

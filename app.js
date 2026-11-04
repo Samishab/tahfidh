@@ -137,6 +137,21 @@ function modal(html) {
 const closeModal = () => { $('#modal').hidden = true; $('#modal').innerHTML = ''; };
 const logoImg = (c = 'logo') => `<img class="${c}" src="${esc(brand().logo) || 'icon.svg'}" alt="شعار">`;
 const initial = n => esc([...String(n).trim()][0] || '؟');
+/* حفظ مكان المستخدم داخل التطبيق ليبقى فيه عند تحديث الصفحة (لكل الحسابات) */
+const NAV_KEYS = ['view', 'sid', 'thread', 'mt', 'ro', 'mo', 'sp', 'sfrom', 'sto', 'mode', 'off', 'cid', 'mschool'];
+function saveNav() {
+  try { if (!db.me || ['verify', 'signup', 'feedback'].includes(st.view)) return; const o = { uid: db.me.id }; NAV_KEYS.forEach(k => { o[k] = st[k]; }); sessionStorage.setItem('tahfidh_nav', JSON.stringify(o)); } catch { }
+}
+const NAV_VIEWS = ['home', 'add', 'students', 'student', 'stats', 'search', 'settings', 'report', 'monthly', 'cert', 'statement', 'messages', 'manage', 'account'];
+function restoreNav() {
+  try {
+    const o = JSON.parse(sessionStorage.getItem('tahfidh_nav') || 'null'); if (!o || o.uid !== db.me.id || !NAV_VIEWS.includes(o.view)) return;
+    NAV_KEYS.forEach(k => { if (o[k] !== undefined) st[k] = o[k]; });
+    if (st.sid && !student(st.sid)) { st.sid = null; if (['student', 'report', 'statement', 'cert'].includes(st.view)) st.view = 'home'; }
+    if (st.thread && !student(st.thread)) st.thread = null;
+    if (isAdmin() && st.mt) st.mtInit = true;
+  } catch { }
+}
 const go = (v, extra = {}) => { Object.assign(st, extra, { view: v }); render(); scrollTo(0, 0); };
 const empty = (ico, txt) => `<div class="empty"><span class="ico">${ico}</span>${txt}</div>`;
 const waNum = p => { const d = String(p || '').replace(/\D/g, ''); return /^05\d{8}$/.test(d) ? '966' + d.slice(1) : d; };
@@ -250,7 +265,7 @@ function renderForce() {
       <button class="btn block gold">حفظ ومتابعة</button><button type="button" class="btn ghost block" data-act="skip-force">لاحقاً — سأغيّرها من «حسابي»</button><button type="button" class="btn light block sm" data-act="logout">تسجيل الخروج</button>
     </form></div></div>`;
 }
-async function logout() { try { await api('logout', {}); } catch { } db = blank(); st.otp = null; st.view = 'home'; st.thread = null; st.form = null; st.skipForce = false; render(); }
+async function logout() { try { await api('logout', {}); } catch { } try { sessionStorage.removeItem('tahfidh_nav'); } catch { } db = blank(); st.otp = null; st.view = 'home'; st.thread = null; st.form = null; st.skipForce = false; render(); }
 
 /* ---------- الإطار ---------- */
 const TITLES = {
@@ -589,6 +604,7 @@ function viewThread() {
   return `<div class="card">
     <div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="close-thread">→ رجوع</button><b>💬 ${esc(s.name)}</b></div>
     <div class="bub" id="bub">${ms.length ? ms.map(m => `<div class="m ${m.senderId === db.me.id ? 'mine' : ''}"><small>${esc(m.senderName)} • ${ROLE_AR[m.senderRole] || ''}</small><p>${esc(m.body)}</p><small>${fmtT(m.at)}</small></div>`).join('') : empty('💬', 'لا توجد رسائل بعد')}</div>
+    ${isAdmin() ? '<p class="hint" style="margin:8px 0 0">🔒 رسائلك كمدير نظام ملاحظات داخلية: يراها المعلمون ومدير المدرسة فقط، ولا تصل إلى ولي الأمر.</p>' : ''}
     <form id="msgform" class="row" style="margin-top:10px;align-items:flex-end"><textarea id="msgin" rows="2" maxlength="1000" placeholder="اكتب ملاحظتك...">${esc(st.draft)}</textarea><button class="btn auto">إرسال</button></form>
   </div>`;
 }
@@ -766,6 +782,7 @@ function render() {
   if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
   shell(views[st.view]());
+  saveNav();
   if (st.view === 'add') updateInfo();
   if (['report', 'monthly', 'cert', 'statement'].includes(st.view)) fitReport();
   { const c = $('#mtabs .chip.on'); if (c) c.scrollIntoView({ inline: 'center', block: 'nearest' }); }
@@ -1044,5 +1061,5 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
     try { await refresh(); } catch { }
     render(); return;
   }
-  try { await refresh(); } catch { } st.ready = true; render();
+  try { await refresh(); if (db.me) restoreNav(); } catch { } st.ready = true; render();
 })();
