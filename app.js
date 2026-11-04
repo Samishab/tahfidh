@@ -205,6 +205,7 @@ function renderLogin() {
       </form>`;
   $('#app').innerHTML = `
   <div class="auth">
+    ${waqfTop()}
     <div class="verse top">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
     <div class="brand">${logoImg()}<h1>${esc(br.name)}</h1><p>${esc(br.tagline || 'سجّل دخولك لمتابعة الحفظ والمراجعة')}</p><div class="hadith">يجيءُ صاحبُ القرآنِ يومَ القيامةِ فيقولُ القرآنُ يا ربِّ حَلِّه فيلبسُ تاجَ الكرامةِ ثمَّ يقولُ يا ربِّ زِدْه فيلبسُ حُلَّةَ الكرامةِ ثمَّ يقولُ يا ربِّ ارضَ عنه فيرضَى عنه فيُقالُ له اقرأْ وارقَ ويزدادُ بكلِّ آيةٍ حسنةً<small>رواه الترمذي</small></div></div>
     <div class="card">
@@ -214,7 +215,6 @@ function renderLogin() {
       ${!st.site || st.site.reg_open !== false ? '<button type="button" class="btn ghost block" style="margin-top:12px" data-act="signup">📝 طلب تسجيل جديد</button><p class="hint" style="text-align:center;margin:8px 0 0">التسجيل الجديد يُفعَّل بعد موافقة الإدارة.</p>' : ''}
       <button type="button" class="btn gold block" style="margin-top:12px" data-act="feedback">💬 تواصل معنا</button>
     </div>
-    ${waqfLine()}
   </div>`;
 }
 const FB_KINDS = [['suggestion', '💡 اقتراح للتحسين'], ['contact', '✉️ تواصل'], ['issue', '🐞 مشكلة'], ['praise', '🌟 رأي / شكر']];
@@ -237,6 +237,7 @@ function renderFeedback() {
       : `${feedbackForm()}<button type="button" class="btn light block" style="margin-top:8px" data-act="to-login">رجوع</button>`}</div>
     ${waqfLine()}</div>`;
 }
+const waqfTop = () => { const w = platformBrand().waqf; return w ? `<div class="waqf-top">${esc(w)}</div>` : ''; };
 const waqfLine = () => { const w = platformBrand().waqf; return w ? `<div class="waqf">${esc(w)}</div>` : ''; };
 function renderSignup() {
   const d = st.signupDone, br = platformBrand();
@@ -296,6 +297,7 @@ function shell(body) {
   const d = new Date(), [t, sub] = TITLES[st.view]();
   $('#app').innerHTML = `
   <header class="hdr">
+    ${waqfTop()}
     <div class="hdr-row">${logoImg()}<div class="grow"><h1>${esc(brand().name)}</h1><small>${esc(db.me.name)} • ${roleLabel(db.me)}</small></div>
       <button class="hbtn" data-act="nav" data-id="search" title="بحث">🔍</button>
       <button class="hbtn" data-act="logout" title="تسجيل الخروج">🚪</button>
@@ -303,7 +305,7 @@ function shell(body) {
     <div class="pagetitle">${t}${sub ? `<small>${sub}</small>` : ''}</div>
     ${isAdmin() && db.schools.length > 1 ? `<select id="fschool" class="fsel" title="تصفية بحسب المدرسة"><option value="">🏫 كل المدارس</option>${db.schools.map(x => `<option value="${x.id}" ${+st.fs === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}
   </header>
-  <main>${db.me.must_change ? '<div class="card" data-act="nav" data-id="account" style="border:1.5px solid var(--gold);background:var(--gold2);cursor:pointer"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">اضغط هنا لتغييرها متى شئت — لا يمنعك شيء من العمل.</div></div>' : ''}${body}${waqfLine()}</main>
+  <main>${db.me.must_change ? '<div class="card" data-act="nav" data-id="account" style="border:1.5px solid var(--gold);background:var(--gold2);cursor:pointer"><b>🔑 كلمة مرورك مؤقتة</b><div class="hint">اضغط هنا لتغييرها متى شئت — لا يمنعك شيء من العمل.</div></div>' : ''}${body}</main>
   <nav class="tabbar">${tabsHtml()}</nav>`;
 }
 
