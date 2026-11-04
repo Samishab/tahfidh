@@ -190,7 +190,7 @@ function renderLogin() {
       ${ms.length > 1 ? `<div class="seg" style="margin-bottom:12px">${ms.map(k => `<button class="${cur === k ? 'on' : ''}" data-act="lm" data-id="${k}" style="font-size:13px">${LM[k][0]}</button>`).join('')}</div>` : ''}
       ${ms.length ? (cur === 'pw' ? pwBlock : otpBlock) : '<div class="info err">الدخول متوقف مؤقتاً، حاول لاحقاً.</div>'}
       ${!st.site || st.site.reg_open !== false ? '<button type="button" class="btn ghost block" style="margin-top:12px" data-act="signup">📝 طلب تسجيل جديد</button><p class="hint" style="text-align:center;margin:8px 0 0">التسجيل الجديد يُفعَّل بعد موافقة الإدارة.</p>' : ''}
-      <button type="button" class="btn gold block" style="margin-top:12px" data-act="feedback">💬 تواصل معنا واقتراحاتك</button>
+      <button type="button" class="btn gold block" style="margin-top:12px" data-act="feedback">💬 تواصل معنا</button>
     </div>
     ${waqfLine()}
   </div>`;
