@@ -184,15 +184,14 @@ function renderLogin() {
   $('#app').innerHTML = `
   <div class="auth">
     <div class="verse top">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
-    <div class="brand">${logoImg()}<h1>${esc(br.name)}</h1><p>${esc(br.tagline || 'سجّل دخولك لمتابعة الحفظ والمراجعة')}</p>${betaPill()}</div>
+    <div class="brand">${logoImg()}<h1>${esc(br.name)}</h1><p>${esc(br.tagline || 'سجّل دخولك لمتابعة الحفظ والمراجعة')}</p><div class="hadith">يجيءُ صاحبُ القرآنِ يومَ القيامةِ فيقولُ القرآنُ يا ربِّ حَلِّه فيلبسُ تاجَ الكرامةِ ثمَّ يقولُ يا ربِّ زِدْه فيلبسُ حُلَّةَ الكرامةِ ثمَّ يقولُ يا ربِّ ارضَ عنه فيرضَى عنه فيُقالُ له اقرأْ وارقَ ويزدادُ بكلِّ آيةٍ حسنةً<small>رواه الترمذي</small></div></div>
     <div class="card">
       <h3>👋 تسجيل الدخول</h3>
       ${ms.length > 1 ? `<div class="seg" style="margin-bottom:12px">${ms.map(k => `<button class="${cur === k ? 'on' : ''}" data-act="lm" data-id="${k}" style="font-size:13px">${LM[k][0]}</button>`).join('')}</div>` : ''}
       ${ms.length ? (cur === 'pw' ? pwBlock : otpBlock) : '<div class="info err">الدخول متوقف مؤقتاً، حاول لاحقاً.</div>'}
       ${!st.site || st.site.reg_open !== false ? '<button type="button" class="btn ghost block" style="margin-top:12px" data-act="signup">📝 طلب تسجيل جديد</button><p class="hint" style="text-align:center;margin:8px 0 0">التسجيل الجديد يُفعَّل بعد موافقة الإدارة.</p>' : ''}
+      <button type="button" class="btn gold block" style="margin-top:12px" data-act="feedback">💬 تواصل معنا واقتراحاتك</button>
     </div>
-    ${betaNote()}
-    <button type="button" class="fbbtn" data-act="feedback">💬 تواصل معنا واقتراحاتك</button>
     ${waqfLine()}
   </div>`;
 }
