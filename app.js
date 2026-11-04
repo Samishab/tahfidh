@@ -180,6 +180,7 @@ function renderLogin() {
           <div class="pwbox"><input name="pw" id="pw" type="password" required autocomplete="current-password"><button type="button" data-act="showpw">👁</button></div></div>
         <label class="row" style="gap:8px;font-size:14px"><input type="checkbox" name="rem" style="width:auto;flex:none" checked> تذكّر دخولي على هذا الجهاز</label>
         <button class="btn block">دخول</button>
+        ${ms.includes('email') ? '<button type="button" class="btn light block sm" data-act="lm" data-id="email">نسيت كلمة المرور؟ ادخل برمز يصل بريدك</button>' : ''}
       </form>`;
   $('#app').innerHTML = `
   <div class="auth">
@@ -449,8 +450,8 @@ function studentForm(s) {
     <div><label class="f">المجموعة / الحلقة <span class="hint">(اختياري)</span></label><input name="group" value="${esc(s?.group)}" placeholder="مثال: حلقة الفجر"></div>
     <div><label class="f">أولياء الأمور المرتبطون</label>
       ${parents.length ? `<div class="checks">${parents.map(p => `<label><input type="checkbox" name="par" value="${p.id}" ${s && s.parents.includes(p.id) ? 'checked' : ''}> ${esc(p.name)} <small class="hint">${esc(p.email || p.username)}</small></label>`).join('')}</div>` : '<p class="hint">لا يوجد أولياء أمور مسجّلون بعد — أضف ولي الأمر هنا بالأسفل.</p>'}</div>
-    <div id="np_box" class="gap" style="border:1.5px dashed var(--g2);border-radius:14px;padding:12px;background:var(--g3)"><label class="f" style="margin:0">➕ ولي أمر جديد <span class="hint">(يُسجَّل ببريده ويُربط بهذا الطالب، وتصله دعوة ويدخل برمز)</span></label>
-      <div class="np_row gap"><input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني (مطلوب)"><input name="np_phone" type="tel" placeholder="الجوال (اختياري)"></div>
+    <div id="np_box" class="gap" style="border:1.5px dashed var(--g2);border-radius:14px;padding:12px;background:var(--g3)"><label class="f" style="margin:0">➕ ولي أمر جديد <span class="hint">(بريده أو جواله — واحد منهما على الأقل. بالبريد يدخل برمز، وبالجوال تُعطى له كلمة مؤقتة)</span></label>
+      <div class="np_row gap"><input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني (اختياري)"><input name="np_phone" type="tel" placeholder="الجوال (إن لم يكن بريد)"></div>
       <button type="button" class="btn light sm" data-act="np-add">＋ ولي أمر آخر</button></div>
     <div><label class="f">دخول الطالب بنفسه <span class="hint">(اختياري — اسم مستخدم)</span></label>
       <input name="login" value="${esc(su?.username)}" placeholder="اتركه فارغاً إن لم يكن للطالب حساب" autocapitalize="off">
@@ -684,8 +685,8 @@ function userForm(u) {
   modal(`<h2>${u ? 'تعديل' : 'إضافة'} ${r === 'solo' ? 'معلم مستقل' : ROLE_AR[r]}</h2>
   <form id="usform" class="gap" data-id="${u ? u.id : ''}" data-role="${soloNew ? 'solo' : (u ? u.role : r)}">
     <div><label class="f">الاسم</label><input name="name" required value="${esc(u?.name)}"></div>
-    <div><label class="f">البريد الإلكتروني ${isParent && !u ? '<span class="hint">(مطلوب — يصله رمز الدخول)</span>' : '<span class="hint">(لتسجيل الدخول برمز)</span>'}</label><input name="email" type="email" inputmode="email" autocapitalize="off" ${isParent && !u ? 'required' : ''} value="${esc(u?.email)}" placeholder="name@example.com"></div>
-    <div><label class="f">الجوال <span class="hint">(اختياري)</span></label><input name="phone" type="tel" inputmode="tel" value="${esc(u?.phone)}" placeholder="05xxxxxxxx أو 9665xxxxxxxx"></div>
+    <div><label class="f">البريد الإلكتروني ${isParent && !u ? '<span class="hint">(بريد أو جوال — واحد منهما على الأقل)</span>' : '<span class="hint">(لتسجيل الدخول برمز)</span>'}</label><input name="email" type="email" inputmode="email" autocapitalize="off" value="${esc(u?.email)}" placeholder="name@example.com"></div>
+    <div><label class="f">الجوال <span class="hint">${isParent && !u ? '(بديل عن البريد)' : '(اختياري)'}</span></label><input name="phone" type="tel" inputmode="tel" value="${esc(u?.phone)}" placeholder="05xxxxxxxx أو 9665xxxxxxxx"></div>
     ${isParent ? '' : `<div><label class="f">اسم المستخدم <span class="hint">(اختياري إن كان له بريد)</span></label><input name="username" value="${esc(u?.username)}" autocapitalize="off"></div>`}
     ${soloNew ? '<div><label class="f">اسم الحلقة <span class="hint">(اختياري)</span></label><input name="sname" maxlength="120" placeholder="مثال: حلقة الشيخ ..."></div>'
       : soloOld ? `<input type="hidden" name="school" value="${u.school_id}">`
@@ -729,6 +730,12 @@ function accountView() {
   return `
   <div class="card"><h3>👤 ${esc(db.me.name)}</h3><p class="hint" style="margin:0">${ROLE_AR[role()]} • ${esc(db.me.username)}</p></div>
   ${staff() ? `<div class="card" data-act="nav" data-id="settings" style="cursor:pointer"><h3>📚 إعدادات القراءات <span class="more">فتح ›</span></h3><p class="hint" style="margin:0">الإقراء بالقراءات العشر بالإضافة إلى حفص — في صفحة مستقلة.</p></div>` : ''}
+  <div class="card"><h3>📧 بريدك الإلكتروني</h3>
+    <p class="hint" style="margin:0 0 10px">${db.me.email ? `بريدك الحالي: <b dir="ltr">${esc(db.me.email)}</b>` : 'لم تضف بريداً بعد.'} بالبريد تدخل برمز يصلك، وتسترجع حسابك إن نسيت كلمة المرور.</p>
+    ${st.emv && st.emv.sent ? `<form id="emcode" class="gap"><div class="info" style="text-align:start">أرسلنا رمزاً إلى <b dir="ltr">${esc(st.emv.email)}</b></div>
+      <input name="code" required inputmode="numeric" maxlength="6" pattern="\d{6}" placeholder="••••••" style="text-align:center;font-size:22px;letter-spacing:6px">
+      <button class="btn block">تأكيد البريد</button><button type="button" class="btn light block sm" data-act="em-cancel">إلغاء</button></form>`
+      : `<form id="emform" class="gap"><input name="email" type="email" required inputmode="email" autocapitalize="off" placeholder="name@example.com" dir="ltr"><button class="btn block light">${db.me.email ? 'تغيير البريد' : 'إضافة البريد'} — إرسال رمز التحقق</button></form>`}</div>
   <div class="card"><h3>🔑 تغيير كلمة المرور</h3>
     <form id="pwform" class="gap"><input name="old" type="password" placeholder="كلمة المرور الحالية" required autocomplete="current-password">
       <input name="new" type="password" placeholder="كلمة المرور الجديدة (٦ أحرف على الأقل)" minlength="6" required autocomplete="new-password"><button class="btn block">تغيير</button></form></div>
@@ -833,6 +840,7 @@ const acts = {
   lm: id => { st.lm = id; render(); },
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
+  'em-cancel': () => { st.emv = null; render(); },
   hs: (d, el) => { const s = el.parentElement.querySelector('.hscroll'); if (s) s.scrollBy({ left: +d * 220, behavior: 'smooth' }); },
   feedback: async () => {
     const r = await api('feedback_token'); st.tk = r.tk; st.fbDone = false;
@@ -848,7 +856,7 @@ const acts = {
   'req-reject': async id => { if (!confirm('رفض هذا الطلب وحذفه؟')) return; await api('request_reject', { id: +id }); await refresh(); closeModal(); render(); toast('تم رفض الطلب'); },
   /* الإدارة */
   mtab: id => { st.mt = id; render(); },
-  'np-add': () => { const b = $('#np_box'); if (b.querySelectorAll('.np_row').length >= 4) return toast('الحد 4 أولياء أمور في المرة'); const d = document.createElement('div'); d.className = 'np_row gap'; d.innerHTML = '<input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني"><input name="np_phone" type="tel" placeholder="الجوال (اختياري)">'; b.insertBefore(d, b.lastElementChild); },
+  'np-add': () => { const b = $('#np_box'); if (b.querySelectorAll('.np_row').length >= 4) return toast('الحد 4 أولياء أمور في المرة'); const d = document.createElement('div'); d.className = 'np_row gap'; d.innerHTML = '<input name="np_name" placeholder="اسم ولي الأمر"><input name="np_email" type="email" inputmode="email" autocapitalize="off" placeholder="البريد الإلكتروني (اختياري)"><input name="np_phone" type="tel" placeholder="الجوال (إن لم يكن بريد)">'; b.insertBefore(d, b.lastElementChild); },
   'add-school': () => schoolForm(),
   'edit-school': id => schoolForm(db.schools.find(s => s.id === +id)),
   'del-school': async id => { if (!confirm('حذف هذه المدرسة؟')) return; await api('school_delete', { id: +id }); await refresh(); closeModal(); render(); toast('تم الحذف'); },
@@ -916,6 +924,13 @@ document.addEventListener('submit', run(async e => {
     const r = await api('message_send', { studentId: st.thread, body: text });
     db.messages.push(r.message); st.draft = ''; render(); return;
   }
+  if (f.id === 'emform') {
+    const email = f.email.value.trim().toLowerCase(); await api('email_code', { email });
+    st.emv = { sent: true, email }; render(); toast('أرسلنا الرمز إلى بريدك'); return;
+  }
+  if (f.id === 'emcode') {
+    const r = await api('email_confirm', { email: st.emv.email, code: f.code.value }); db.me.email = r.email; st.emv = null; render(); toast('تم حفظ بريدك ✔'); return;
+  }
   if (f.id === 'fbform') {
     await api('feedback_send', { kind: f.kind.value, name: f.name.value, email: f.email.value, message: f.message.value, website: f.website.value, tk: st.tk });
     if (db.me) { closeModal(); toast('وصلتنا رسالتك، جزاك الله خيراً ✔'); } else { st.fbDone = true; render(); }
@@ -962,6 +977,7 @@ document.addEventListener('submit', run(async e => {
     });
     await refresh(); closeModal(); render(); toast('تم الحفظ ✔');
     if (r.login) showCreds(f.name.value, r.login.username, r.login.password, '');
+    else if (r.parent_creds && r.parent_creds.length) { const c = r.parent_creds[0]; showCreds(c.name, c.username, c.password, c.phone); if (r.parent_creds.length > 1) toast('أُنشئ ' + r.parent_creds.length + ' أولياء أمور، أعد تعيين كلمة مرور الباقين من «الأولياء» عند الحاجة'); }
     return;
   }
   if (f.id === 'schform') {

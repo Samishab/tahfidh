@@ -388,8 +388,8 @@ try {
         } elseif (!in_array($role, $allowed, true)) fail('نوع الحساب غير صحيح');
         if ($role === 'solo') { $newSolo = true; $role = 'school_admin'; }       // معلم مستقل جديد: تُنشأ له حلقته (مدرسة قائمة بذاتها)
         if ($role === 'parent') {
-            if (!$id && $email === '') fail('بريد ولي الأمر مطلوب');
-            if (!$id) $un = $email;                                              // اسم دخول ولي الأمر هو بريده
+            if (!$id && $email === '' && $phone === '') fail('اكتب بريد ولي الأمر أو رقم جواله');
+            if (!$id) $un = $email !== '' ? $email : normUser($phone);           // اسم دخوله بريده، وإلا رقم جواله
         } elseif ($un === '' && $email !== '') $un = $email;
         if ($un === '') fail('اسم المستخدم مطلوب');
         uniqueUsername($un, $id);
@@ -416,11 +416,11 @@ try {
             }
         } else {
             if ($newSolo) { q('INSERT INTO schools (name) VALUES (?)', [str('school_name', 120) ?: ('حلقة ' . $name)]); $school = (int)db()->lastInsertId(); }
-            $pw = genPass(); $isParent = $role === 'parent';
+            $pw = genPass(); $isParent = $role === 'parent'; $byMail = $isParent && $email !== '';
             q('INSERT INTO users (username,name,role,school_id,email,phone,pass_hash,qiraat,solo,must_change) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                [$un, $name, $role, $school, $email ?: null, $phone, password_hash($pw, PASSWORD_DEFAULT), $qv, $newSolo ? 1 : 0, $isParent ? 0 : 1]);
+                [$un, $name, $role, $school, $email ?: null, $phone, password_hash($pw, PASSWORD_DEFAULT), $qv, $newSolo ? 1 : 0, $byMail ? 0 : 1]);
             $id = (int)db()->lastInsertId();
-            if ($isParent) $pw = null;                                           // ولي الأمر يدخل بالرمز على بريده
+            if ($byMail) $pw = null;                                             // ولي الأمر بالبريد يدخل بالرمز؛ بالجوال فقط يُعطى كلمة مؤقتة
         }
         if ($role === 'parent' && $sids) {
             [$w, $pp] = scope($me, 'id');
@@ -473,9 +473,10 @@ try {
         $newPar = [];                                                      // أولياء أمور جدد: اسم + بريد (والجوال اختياري)
         foreach (array_slice(is_array($b['new_parents'] ?? null) ? $b['new_parents'] : [], 0, 5) as $np) {
             $pn = mb_substr(trim((string)($np['name'] ?? '')), 0, 120); $pe = strtolower(trim((string)($np['email'] ?? '')));
-            if ($pn === '' && $pe === '') continue;
-            if ($pn === '' || !filter_var($pe, FILTER_VALIDATE_EMAIL)) fail('أدخل اسم ولي الأمر وبريده الإلكتروني الصحيح');
-            $newPar[] = [$pn, $pe, preg_replace('/[^\d+]/', '', (string)($np['phone'] ?? ''))];
+            $pph = preg_replace('/[^\d+]/', '', (string)($np['phone'] ?? ''));
+            if ($pn === '' && $pe === '' && $pph === '') continue;
+            if ($pn === '' || ($pe === '' && $pph === '') || ($pe !== '' && !filter_var($pe, FILTER_VALIDATE_EMAIL))) fail('أدخل اسم ولي الأمر مع بريده الإلكتروني أو رقم جواله');
+            $newPar[] = [$pn, $pe, $pph];
         }
         if ($program === 'qiraat') {
             if (!qiraatAllowedAny($me, $tids)) fail('فعّل القراءات في حساب المعلم أو حسابك أولاً');
@@ -513,13 +514,16 @@ try {
             if (!$k || $lb === '' || !in_array($kd, ['riwaya', 'qiraa', 'jam'], true)) continue;
             q("INSERT INTO enrollments (student_id,kind,riwayat,label,status,prior,shaykh,created_by) VALUES (?,?,?,?,'completed',1,?,?)", [$id, $kd, implode(',', $k), $lb, str('prior_where', 160), $me['id']]);
         }
-        $schoolNm = (string)q('SELECT name FROM schools WHERE id=?', [$school])->fetchColumn(); $invites = [];
+        $schoolNm = (string)q('SELECT name FROM schools WHERE id=?', [$school])->fetchColumn(); $invites = []; $pcreds = [];
         foreach ($newPar as [$pn, $pe, $pph]) {
-            $ex = q('SELECT id,role,school_id FROM users WHERE email=? OR username=?', [$pe, $pe])->fetch();
-            if ($ex) { if ($ex['role'] !== 'parent' || (int)$ex['school_id'] !== (int)$school) fail('البريد ' . $pe . ' مستخدم لحساب آخر'); $pidn = (int)$ex['id']; }
+            $pun = $pe !== '' ? $pe : normUser($pph);
+            $ex = $pe !== '' ? q('SELECT id,role,school_id FROM users WHERE email=? OR username=?', [$pe, $pe])->fetch() : q('SELECT id,role,school_id FROM users WHERE username=?', [$pun])->fetch();
+            if ($ex) { if ($ex['role'] !== 'parent' || (int)$ex['school_id'] !== (int)$school) fail(($pe !== '' ? 'البريد ' : 'الجوال ') . $pun . ' مستخدم لحساب آخر'); $pidn = (int)$ex['id']; }
             else {
-                q("INSERT INTO users (username,name,role,school_id,email,phone,pass_hash,must_change) VALUES (?,?,'parent',?,?,?,?,0)", [$pe, $pn, $school, $pe, $pph, password_hash(genPass(), PASSWORD_DEFAULT)]);
-                $pidn = (int)db()->lastInsertId(); $invites[] = [$pe, $pn];
+                $ppw = genPass();
+                q("INSERT INTO users (username,name,role,school_id,email,phone,pass_hash,must_change) VALUES (?,?,'parent',?,?,?,?,?)", [$pun, $pn, $school, $pe ?: null, $pph, password_hash($ppw, PASSWORD_DEFAULT), $pe !== '' ? 0 : 1]);
+                $pidn = (int)db()->lastInsertId();
+                if ($pe !== '') $invites[] = [$pe, $pn]; else $pcreds[] = ['name' => $pn, 'username' => $pun, 'password' => $ppw, 'phone' => $pph];
             }
             q('INSERT IGNORE INTO parent_student (parent_id,student_id) VALUES (?,?)', [$pidn, $id]);
         }
@@ -539,7 +543,7 @@ try {
         } elseif ($uid) {
             q('DELETE FROM users WHERE id=?', [$uid]); q('UPDATE students SET user_id=NULL WHERE id=?', [$id]);
         }
-        out(['id' => $id, 'login' => $cred]);
+        out(['id' => $id, 'login' => $cred, 'parent_creds' => $pcreds]);
     }
     case 'student_delete': {
         $me = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
@@ -735,6 +739,35 @@ try {
         if ($u) { if ($ch === 'email') sendOtpMail($email, $u['name'], $code, $ttl); else gatewaySend($ch, $u['phone'], otpText($code, $ttl)); }
         else usleep(random_int(500000, 1100000));
         out(['ok' => true, 'wait' => $cool]);
+    }
+    case 'email_code': {
+        $u = need(); $email = strtolower(str('email', 190));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('اكتب بريداً إلكترونياً صحيحاً');
+        if (cfgv('smtp_enabled') !== '1') fail('إرسال البريد غير مفعّل حالياً', 503);
+        if (q('SELECT 1 FROM users WHERE email=? AND id<>?', [$email, $u['id']])->fetchColumn()) fail('هذا البريد مستخدم لحساب آخر');
+        $ttl = max(3, min(30, (int)cfgv('otp_ttl'))); $cool = max(20, min(600, (int)cfgv('otp_cooldown'))); $ident = 'ev:' . $u['id'] . ':' . md5($email);
+        $last = q('SELECT created_at FROM otp_codes WHERE email=? ORDER BY id DESC LIMIT 1', [$ident])->fetch();
+        if ($last && time() - strtotime($last['created_at']) < $cool) out(['ok' => true, 'wait' => $cool - (time() - strtotime($last['created_at']))]);
+        if ((int)q('SELECT COUNT(*) FROM otp_codes WHERE email LIKE ? AND created_at > NOW() - INTERVAL 1 HOUR', ['ev:' . $u['id'] . ':%'])->fetchColumn() >= 6) fail('تجاوزت عدد الرموز المسموح به في الساعة', 429);
+        $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        q('INSERT INTO otp_codes (email,code_hash,expires_at,ip) VALUES (?,?, NOW() + INTERVAL ' . $ttl . ' MINUTE, ?)', [$ident, otpHash($code), ip()]);
+        $r = sendOtpMail($email, $u['name'], $code, $ttl);
+        if (empty($r['ok'])) fail('تعذر إرسال الرمز، تأكد من البريد وحاول لاحقاً');
+        out(['ok' => true, 'wait' => $cool]);
+    }
+    case 'email_confirm': {
+        $u = need(); $email = strtolower(str('email', 190)); $code = preg_replace('/\D/', '', (string)(body()['code'] ?? '')); $maxA = max(3, min(10, (int)cfgv('otp_max_attempts')));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($code) !== 6) fail('الرمز غير صحيح');
+        $ident = 'ev:' . $u['id'] . ':' . md5($email);
+        $row = q('SELECT * FROM otp_codes WHERE email=? AND used=0 AND expires_at > NOW() ORDER BY id DESC LIMIT 1', [$ident])->fetch();
+        if (!$row || (int)$row['attempts'] >= $maxA || !hash_equals($row['code_hash'], otpHash($code))) {
+            if ($row) q('UPDATE otp_codes SET attempts=attempts+1 WHERE id=?', [$row['id']]);
+            fail('الرمز غير صحيح أو منتهي', 401);
+        }
+        if (q('SELECT 1 FROM users WHERE email=? AND id<>?', [$email, $u['id']])->fetchColumn()) fail('هذا البريد مستخدم لحساب آخر');
+        q('UPDATE otp_codes SET used=1 WHERE id=?', [$row['id']]);
+        q('UPDATE users SET email=? WHERE id=?', [$email, $u['id']]);
+        out(['ok' => true, 'email' => $email]);
     }
     case 'otp_verify': {
         $b = body(); $ch = (string)($b['channel'] ?? 'email'); $email = strtolower(str('email', 190)); $phone = preg_replace('/\D/', '', str('phone', 30));
