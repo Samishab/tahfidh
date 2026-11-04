@@ -167,6 +167,86 @@ function msgAud(array $u, $v): string {
     return in_array($v, ['parents', 'student', 'both', 'staff', 'teachers', 'school'], true) ? $v : 'both';
 }
 
+/* ===== الرسائل المباشرة (محادثة بين شخصين) ===== */
+function dmOut(array $m): array {
+    $from = (int)$m['sender_id'];
+    return ['id' => (int)$m['id'], 'from' => $from, 'to' => $from === (int)$m['a'] ? (int)$m['b'] : (int)$m['a'], 'body' => $m['body'], 'at' => iso($m['created_at'])];
+}
+/** من يحق لهذا المستخدم مراسلته (قوائم بحسب مستواه). الرسائل القديمة تبقى ظاهرة دائماً لكن الإرسال الجديد لا يكون إلا لهؤلاء */
+function dmContacts(array $u): array {
+    $me = (int)$u['id']; $role = $u['role']; $sch = (int)($u['school_id'] ?? 0); $solo = !empty($u['solo']);
+    $G = [];
+    $add = function (string $key, string $label, array $ids) use (&$G, $me) {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($x) => $x && $x !== $me)));
+        if (!$ids) return;
+        if (isset($G[$key])) $G[$key]['ids'] = array_values(array_unique(array_merge($G[$key]['ids'], $ids)));
+        else $G[$key] = ['key' => $key, 'label' => $label, 'ids' => $ids];
+    };
+    $ids = fn(string $sql, array $p = []) => array_map('intval', array_column(q($sql, $p)->fetchAll(), 'id'));
+    $flag = fn(int $s, string $c) => $s > 0 && (int)q("SELECT $c FROM schools WHERE id=?", [$s])->fetchColumn() === 1;
+    $mgrs = fn(int $s) => $s ? $ids("SELECT id FROM users WHERE role='school_admin' AND solo=0 AND school_id=?", [$s]) : [];
+    $teachersOf = fn(int $s) => $s ? $ids("SELECT id FROM users WHERE school_id=? AND (role='teacher' OR (role='school_admin' AND solo=1))", [$s]) : [];
+    $platform = fn() => $ids("SELECT id FROM users WHERE role='admin'");
+    if ($role === 'admin') {
+        $add('parents', 'أولياء الأمور', $ids("SELECT id FROM users WHERE role='parent'"));
+        $add('students', 'الطلاب', $ids("SELECT id FROM users WHERE role='student'"));
+        $add('teachers', 'المعلمون', $ids("SELECT id FROM users WHERE role='teacher'"));
+        $add('managers', 'مدراء المدارس والمعلمون المستقلون', $ids("SELECT id FROM users WHERE role='school_admin'"));
+    } elseif ($role === 'school_admin') {
+        $add('parents', 'أولياء الأمور', $ids("SELECT id FROM users WHERE role='parent' AND school_id=?", [$sch]));
+        $add('students', 'الطلاب', $ids("SELECT id FROM users WHERE role='student' AND school_id=?", [$sch]));
+        if (!$solo) $add('teachers', 'المعلمون', $ids("SELECT id FROM users WHERE role='teacher' AND school_id=?", [$sch]));
+        $add('platform', 'إدارة المنصة', $platform());
+    } elseif ($role === 'teacher') {
+        $add('school', 'إدارة المدرسة', $mgrs($sch));
+        $add('teachers', 'المعلمون', $ids("SELECT id FROM users WHERE role='teacher' AND school_id=?", [$sch]));
+        $add('parents', 'أولياء أمور طلابي', $ids("SELECT DISTINCT ps.parent_id id FROM parent_student ps JOIN student_teacher stt ON stt.student_id=ps.student_id WHERE stt.teacher_id=?", [$me]));
+        $add('students', 'طلابي', $ids("SELECT DISTINCT s.user_id id FROM students s JOIN student_teacher stt ON stt.student_id=s.id WHERE stt.teacher_id=? AND s.user_id IS NOT NULL", [$me]));
+    } elseif ($role === 'student') {
+        $s = q('SELECT id,school_id FROM students WHERE user_id=?', [$me])->fetch();
+        if ($s) {
+            $ss = (int)$s['school_id']; $tids = $ids('SELECT teacher_id id FROM student_teacher WHERE student_id=?', [(int)$s['id']]);
+            if ($flag($ss, 'chat_st_teachers')) $tids = array_merge($tids, $teachersOf($ss));
+            $add('teachers', 'المعلمون', $tids);
+            $add('school', 'إدارة المدرسة', $mgrs($ss));
+            $add('parents', 'ولي أمري', $ids('SELECT parent_id id FROM parent_student WHERE student_id=?', [(int)$s['id']]));
+            if ($flag($ss, 'chat_st_students')) $add('students', 'الطلاب', $ids('SELECT user_id id FROM students WHERE school_id=? AND user_id IS NOT NULL', [$ss]));
+        }
+    } elseif ($role === 'parent') {
+        $kids = q('SELECT s.id,s.user_id,s.school_id FROM students s JOIN parent_student ps ON ps.student_id=s.id WHERE ps.parent_id=?', [$me])->fetchAll();
+        $sids = array_map(fn($k) => (int)$k['id'], $kids); $tids = []; $mg = [];
+        if ($sids) $tids = $ids('SELECT teacher_id id FROM student_teacher WHERE student_id IN (' . implode(',', $sids) . ')');
+        foreach (array_unique(array_map(fn($k) => (int)$k['school_id'], $kids)) as $ss) {
+            if ($flag($ss, 'chat_pa_teachers')) $tids = array_merge($tids, $teachersOf($ss));
+            $mg = array_merge($mg, $mgrs($ss));
+        }
+        $add('students', 'أبنائي', array_filter(array_map(fn($k) => (int)$k['user_id'], $kids)));
+        $add('teachers', 'المعلمون', $tids);
+        $add('school', 'إدارة المدرسة', $mg);
+    }
+    $all = [];
+    foreach ($G as $g) $all = array_merge($all, $g['ids']);
+    $live = $all ? array_flip($ids('SELECT id FROM users WHERE active=1 AND id IN (' . implode(',', array_unique($all)) . ')')) : [];
+    $out = [];
+    foreach ($G as $g) { $g['ids'] = array_values(array_filter($g['ids'], fn($x) => isset($live[$x]))); if ($g['ids']) $out[] = $g; }
+    return $out;
+}
+function dmInfo(array $ids, array $viewer): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids)))); if (!$ids) return [];
+    $in = implode(',', $ids); $info = [];
+    $kids = []; foreach (q("SELECT ps.parent_id pid, s.name FROM parent_student ps JOIN students s ON s.id=ps.student_id WHERE ps.parent_id IN ($in) ORDER BY s.name")->fetchAll() as $r) $kids[(int)$r['pid']][] = $r['name'];
+    $grp = []; foreach (q("SELECT user_id uid, grp FROM students WHERE user_id IN ($in)")->fetchAll() as $r) $grp[(int)$r['uid']] = $r['grp'] ?? '';
+    $sn = []; if ($viewer['role'] === 'admin') foreach (q('SELECT id,name FROM schools')->fetchAll() as $r) $sn[(int)$r['id']] = $r['name'];
+    foreach (q("SELECT id,name,role,solo,school_id FROM users WHERE id IN ($in)")->fetchAll() as $r) {
+        $i = (int)$r['id']; $sub = [];
+        if ($r['role'] === 'parent' && !empty($kids[$i])) $sub[] = 'ولي أمر ' . implode('، ', array_slice($kids[$i], 0, 3));
+        if ($r['role'] === 'student' && !empty($grp[$i])) $sub[] = $grp[$i];
+        if ($sn && $r['school_id'] && isset($sn[(int)$r['school_id']])) $sub[] = $sn[(int)$r['school_id']];
+        $info[$i] = ['n' => $r['name'], 'r' => $r['role'], 's' => (int)$r['solo'], 'sub' => implode(' • ', $sub)];
+    }
+    return $info;
+}
+
 function bootstrap(array $u): array {
     [$w, $p] = scope($u);
     $fs = $u['role'] === 'admin' ? (int)($_GET['school'] ?? 0) : 0;              // فلتر مدرسة للمدير: يُطبَّق في الخادم
@@ -200,7 +280,8 @@ function bootstrap(array $u): array {
         $sids = array_values(array_unique(array_filter(array_merge(array_column($students, 'school_id'), [$u['school_id']]))));
         $schools = $sids ? q('SELECT id,name,logo,(SELECT COUNT(*) FROM users z WHERE z.school_id=schools.id AND z.solo=1) AS is_solo FROM schools WHERE id IN (' . implode(',', array_map('intval', $sids)) . ')')->fetchAll() : [];
     }
-    $schools = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'logo' => $s['logo'] ?? '', 'ns' => isset($s['ns']) ? (int)$s['ns'] : null, 'nt' => isset($s['nt']) ? (int)$s['nt'] : null,
+    $cf = []; foreach (q('SELECT id,chat_st_teachers a,chat_st_students b,chat_pa_teachers c FROM schools')->fetchAll() as $r) $cf[(int)$r['id']] = ['st_teachers' => (bool)$r['a'], 'st_students' => (bool)$r['b'], 'pa_teachers' => (bool)$r['c']];
+    $schools = array_map(fn($s) => ['chat' => $cf[(int)$s['id']] ?? null, 'id' => (int)$s['id'], 'name' => $s['name'], 'logo' => $s['logo'] ?? '', 'ns' => isset($s['ns']) ? (int)$s['ns'] : null, 'nt' => isset($s['nt']) ? (int)$s['nt'] : null,
         'plan' => $s['plan'] ?? null, 'expires_at' => $s['expires_at'] ?? null, 'max_students' => isset($s['max_students']) ? (int)$s['max_students'] : null,
         'active' => isset($s['active']) ? (bool)$s['active'] : true, 'notes' => $s['notes'] ?? '',
         'is_solo' => !empty($s['is_solo']), 'mgr_id' => !empty($s['mgr_id']) ? (int)$s['mgr_id'] : null, 'mgr_name' => $s['mgr_name'] ?? null], $schools);
@@ -212,6 +293,12 @@ function bootstrap(array $u): array {
         'students' => $stOut, 'records' => $recs, 'messages' => $msgs, 'reads' => (object)$reads, 'users' => [],
         'certs' => array_map('certOut', q("SELECT * FROM certificates WHERE student_id IN ($in) ORDER BY id DESC")->fetchAll()),
         'enrollments' => array_map('enrOut', q("SELECT * FROM enrollments WHERE student_id IN ($in) ORDER BY id")->fetchAll())];
+    $ct = dmContacts($u);
+    $dm = array_reverse(array_map('dmOut', q('SELECT * FROM dm WHERE a=? OR b=? ORDER BY id DESC LIMIT 1500', [$u['id'], $u['id']])->fetchAll()));
+    $dmr = []; foreach (q('SELECT peer_id,last_id FROM dm_reads WHERE user_id=?', [$u['id']])->fetchAll() as $r) $dmr[(int)$r['peer_id']] = (int)$r['last_id'];
+    $pids = array_map(fn($m) => $m['from'] === (int)$u['id'] ? $m['to'] : $m['from'], $dm);
+    foreach ($ct as $g) $pids = array_merge($pids, $g['ids']);
+    $res['contacts'] = ['groups' => $ct, 'users' => (object)dmInfo($pids, $u)]; $res['dm'] = $dm; $res['dm_reads'] = (object)$dmr;
     $reqOut = fn($r) => ['id' => (int)$r['id'], 'role' => $r['role'], 'name' => $r['name'], 'username' => $r['username'],
         'school_id' => $r['school_id'] ? (int)$r['school_id'] : null, 'school_name' => $r['school_name'] ?? '', 'children' => $r['children'] ?? '', 'at' => iso($r['created_at'])];
     if ($u['role'] === 'admin') {
@@ -358,6 +445,27 @@ try {
         $id = (int)db()->lastInsertId();
         out(['message' => msgOut(q(MSG_SQL . ' WHERE m.id=?', [$id])->fetch())]);
     }
+    case 'chat_send': {
+        $u = need(); $to = (int)(body()['to'] ?? 0); $text = str('body', 1000);
+        if ($text === '') fail('اكتب الرسالة');
+        $ok = false; foreach (dmContacts($u) as $g) if (in_array($to, $g['ids'], true)) { $ok = true; break; }
+        if (!$ok) fail('لا يمكنك إرسال رسائل جديدة إلى هذه الجهة', 403);
+        q('INSERT INTO dm (a,b,sender_id,body) VALUES (?,?,?,?)', [min($to, (int)$u['id']), max($to, (int)$u['id']), $u['id'], $text]);
+        out(['message' => dmOut(q('SELECT * FROM dm WHERE id=?', [(int)db()->lastInsertId()])->fetch())]);
+    }
+    case 'chat_read': {
+        $u = need(); $peer = (int)(body()['peer'] ?? 0); $last = (int)(body()['last'] ?? 0);
+        if ($peer > 0) q('INSERT INTO dm_reads (user_id,peer_id,last_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE last_id=GREATEST(last_id,VALUES(last_id))', [$u['id'], $peer, $last]);
+        out(['ok' => true]);
+    }
+    case 'chat_settings': {                                                   // صلاحيات التواصل لمدرسة (مدير المدرسة/المعلم المستقل لمدرسته، ومدير النظام لأي مدرسة)
+        $me = need('admin', 'school_admin'); $b = body();
+        $sid = $me['role'] === 'admin' ? (int)($b['school_id'] ?? 0) : (int)$me['school_id'];
+        if (!$sid || !q('SELECT 1 FROM schools WHERE id=?', [$sid])->fetchColumn()) fail('مدرسة غير صحيحة');
+        $f = fn($k) => !empty($b[$k]) ? 1 : 0;
+        q('UPDATE schools SET chat_st_teachers=?, chat_st_students=?, chat_pa_teachers=? WHERE id=?', [$f('st_teachers'), $f('st_students'), $f('pa_teachers'), $sid]);
+        out(['ok' => true, 'school_id' => $sid, 'chat' => ['st_teachers' => (bool)$f('st_teachers'), 'st_students' => (bool)$f('st_students'), 'pa_teachers' => (bool)$f('pa_teachers')]]);
+    }
     case 'message_staff': {                                                   // رسالة بين طاقم المدرسة (معلمون / إدارة) بلا طالب
         $u = need('teacher', 'school_admin'); $text = str('body', 1000); $school = (int)$u['school_id'];
         if ($text === '') fail('اكتب الرسالة'); if (!$school) fail('غير مصرح', 403);
@@ -405,7 +513,8 @@ try {
         $u = need(); [$w, $p] = scope($u, 'm.student_id'); $since = (int)($_GET['since'] ?? 0);
         if ($u['role'] === 'admin') $w = 'm.student_id>0';
         elseif (in_array($u['role'], ['teacher', 'school_admin'], true) && $u['school_id']) { $w = "($w OR (m.student_id=0 AND m.school_id=?))"; $p[] = (int)$u['school_id']; }
-        out(['role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w" . msgVis($u) . " ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
+        $dmSince = (int)($_GET['dm_since'] ?? 0);
+        out(['dm' => array_map('dmOut', q('SELECT * FROM dm WHERE id>? AND (a=? OR b=?) ORDER BY id LIMIT 200', [$dmSince, $u['id'], $u['id']])->fetchAll()), 'role' => $u['role'], 'solo' => (bool)($u['solo'] ?? 0), 'messages' => array_map('msgOut', q(MSG_SQL . " WHERE m.id>? AND $w" . msgVis($u) . " ORDER BY m.id LIMIT 200", [$since, ...$p])->fetchAll()),
             'pending' => $u['role'] === 'admin' ? (int)q('SELECT COUNT(*) FROM signup_requests')->fetchColumn()
                 : ($u['role'] === 'school_admin' ? (int)q("SELECT COUNT(*) FROM signup_requests WHERE school_id=? AND role IN ('parent','teacher')", [$u['school_id']])->fetchColumn() : 0)]);
     }
@@ -955,7 +1064,7 @@ try {
             'rec_today' => $n('SELECT COUNT(*) FROM records WHERE rec_date=CURDATE()'), 'rec_week' => $n('SELECT COUNT(*) FROM records WHERE rec_date >= CURDATE() - INTERVAL 6 DAY'),
             'rec_month' => $n('SELECT COUNT(*) FROM records WHERE rec_date >= CURDATE() - INTERVAL 29 DAY'),
             'active7' => $n('SELECT COUNT(*) FROM users WHERE last_login >= NOW() - INTERVAL 7 DAY'), 'pending' => $n('SELECT COUNT(*) FROM signup_requests'),
-            'certs' => $n('SELECT COUNT(*) FROM certificates'), 'msgs7' => $n('SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL 7 DAY'),
+            'certs' => $n('SELECT COUNT(*) FROM certificates'), 'msgs7' => $n('SELECT COUNT(*) FROM dm WHERE created_at >= NOW() - INTERVAL 7 DAY'),
         ], 'mail24' => ['sent' => $n("SELECT COUNT(*) FROM mail_log WHERE status='sent' AND created_at >= NOW() - INTERVAL 1 DAY"), 'failed' => $n("SELECT COUNT(*) FROM mail_log WHERE status='failed' AND created_at >= NOW() - INTERVAL 1 DAY")],
         'top' => q("SELECT s.id,s.name,COUNT(r.id) n FROM schools s JOIN students st ON st.school_id=s.id JOIN records r ON r.student_id=st.id AND r.rec_date >= CURDATE() - INTERVAL 29 DAY GROUP BY s.id,s.name ORDER BY n DESC LIMIT 5")->fetchAll(),
         'expiring' => q("SELECT id,name,expires_at FROM schools WHERE expires_at IS NOT NULL AND expires_at <= CURDATE() + INTERVAL 14 DAY ORDER BY expires_at LIMIT 10")->fetchAll(),
@@ -1011,7 +1120,7 @@ try {
         out(['app' => 'tahfidh', 'exported_at' => date('c'), 'tables' => [
             'schools' => $t('SELECT * FROM schools'), 'users' => $strip($t('SELECT * FROM users'), ['pass_hash']), 'students' => $t('SELECT * FROM students'),
             'student_teacher' => $t('SELECT * FROM student_teacher'), 'parent_student' => $t('SELECT * FROM parent_student'), 'enrollments' => $t('SELECT * FROM enrollments'),
-            'records' => $t('SELECT * FROM records'), 'certificates' => $t('SELECT * FROM certificates'), 'messages' => $t('SELECT * FROM messages')]]);
+            'records' => $t('SELECT * FROM records'), 'certificates' => $t('SELECT * FROM certificates'), 'messages' => $t('SELECT * FROM dm')]]);
     }
 
     default: fail('مسار غير معروف', 404);

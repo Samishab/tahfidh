@@ -21,7 +21,7 @@ async function api(route, body, qs = '') {
 }
 
 /* ---------- البيانات ---------- */
-const blank = () => ({ me: null, app: null, school: null, schools: [], users: [], students: [], records: [], messages: [], reads: {}, requests: [], certs: [], enrollments: [] });
+const blank = () => ({ me: null, app: null, school: null, schools: [], users: [], students: [], records: [], messages: [], reads: {}, dm: [], dm_reads: {}, contacts: { groups: [], users: {} }, requests: [], certs: [], enrollments: [] });
 let db = blank();
 let WS = 6;                                                                  // أول يوم في الأسبوع (من إعدادات المنصة)
 const refresh = async () => { db = Object.assign(blank(), await api('bootstrap', null, st.fs ? '&school=' + encodeURIComponent(st.fs) : '')); if (db.app) WS = db.app.week_start; };
@@ -117,15 +117,20 @@ const recText = r => rEnd(r) !== r.surah ? `من سورة ${Q.name(r.surah)} آ�
   : `سورة ${Q.name(r.surah)} (${r.from === r.to ? 'آية ' + r.from : 'من آية ' + r.from + ' إلى ' + r.to})`;
 
 /* ---------- الرسائل ---------- */
-const msgsOf = sid => db.messages.filter(m => m.studentId === +sid);
-const unread = sid => msgsOf(sid).filter(m => m.id > (db.reads[sid] || 0) && m.senderId !== db.me.id).length;
-const chOn = () => ['teacher', 'school_admin'].includes(role()) && !db.me.solo && !!db.me.school_id;
-const totalUnread = () => db.students.reduce((n, s) => n + unread(s.id), 0) + (chOn() ? unread(0) : 0);
-function markRead(sid) {
-  const ms = msgsOf(sid), last = ms.length ? ms[ms.length - 1].id : 0;
-  if (last > (db.reads[sid] || 0)) { db.reads[sid] = last; api('messages_read', { studentId: +sid, lastId: last }).catch(() => { }); updateTabbar(); }
+/* ---- الرسائل المباشرة ---- */
+const peerOf = m => m.from === db.me.id ? m.to : m.from;
+const dmOf = pid => db.dm.filter(m => peerOf(m) === +pid);
+const cuInfo = id => (db.contacts.users || {})[id] || { n: 'مستخدم', r: '', s: 0, sub: '' };
+const cuRole = i => i.s ? 'معلم مستقل' : (ROLE_AR[i.r] || '');
+const canMsg = pid => db.contacts.groups.some(g => g.ids.includes(+pid));
+const dmUnread = pid => dmOf(pid).filter(m => m.from !== db.me.id && m.id > ((db.dm_reads || {})[pid] || 0)).length;
+const peersList = () => [...new Set(db.dm.map(peerOf))];
+const unread = () => 0;
+const totalUnread = () => peersList().reduce((n, p) => n + dmUnread(p), 0);
+function markRead(pid) {
+  const ms = dmOf(pid), last = ms.length ? ms[ms.length - 1].id : 0;
+  if (last > ((db.dm_reads || {})[pid] || 0)) { db.dm_reads[pid] = last; api('chat_read', { peer: +pid, last }).catch(() => { }); updateTabbar(); }
 }
-
 /* ---------- أدوات واجهة ---------- */
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -149,7 +154,7 @@ function restoreNav() {
     const o = JSON.parse(sessionStorage.getItem('tahfidh_nav') || 'null'); if (!o || o.uid !== db.me.id || !NAV_VIEWS.includes(o.view)) return;
     NAV_KEYS.forEach(k => { if (o[k] !== undefined) st[k] = o[k]; });
     if (st.sid && !student(st.sid)) { st.sid = null; if (['student', 'report', 'statement', 'cert'].includes(st.view)) st.view = 'home'; }
-    if (st.thread && st.thread !== 'ch' && !student(st.thread)) st.thread = null;
+    if (st.thread && !(db.contacts.users || {})[st.thread]) st.thread = null;
     if (isAdmin() && st.mt) st.mtInit = true;
   } catch { }
 }
@@ -509,9 +514,9 @@ function viewStudent() {
   <div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="open-report" data-id="${s.id}">📄 التقرير الشهري</button><button class="btn ghost" data-act="open-stmt" data-id="${s.id}">📑 كشف التسميع</button></div>
   <div class="row" style="margin-bottom:14px">
     ${staff() ? `<button class="btn gold" data-act="quick" data-id="${s.id}">＋ تسميع جديد</button><button class="btn ghost" data-act="report" data-id="${s.id}">📤 تقرير الأسبوع</button>`
-      : `<button class="btn gold" data-act="open-thread" data-id="${s.id}">💬 مراسلة المعلم${un ? ` (${un})` : ''}</button>`}
+      : `<button class="btn gold" data-act="chat-teacher" data-id="${s.id}">💬 مراسلة المعلم</button>`}
   </div>
-  ${staff() ? `<div class="row" style="margin:-4px 0 14px"><button class="btn light" data-act="open-thread" data-id="${s.id}">💬 الرسائل${un ? ` (${un} جديدة)` : ''}</button></div>` : ''}
+  ${staff() ? `<div class="row" style="margin:-4px 0 14px"><button class="btn light" data-act="nav" data-id="messages">💬 الرسائل</button></div>` : ''}
   <div class="card"><h3>🗺 خريطة الأجزاء</h3>
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${juz.map((p, i) => `<div style="text-align:center;font-size:12px;border:1.5px solid ${p ? 'var(--g2)' : 'var(--line)'};border-radius:12px;padding:6px 0;background:linear-gradient(to top,${p === 100 ? 'var(--g2)' : 'var(--g3)'} ${p}%,#fff ${p}%);color:${p === 100 ? '#fff' : 'var(--ink)'}"><b>${i + 1}</b><br><small>${p}%</small></div>`).join('')}</div>
     <p class="hint">اللون الممتلئ = الجزء محفوظ بالكامل</p></div>
@@ -590,81 +595,55 @@ function viewStats() {
 }
 
 /* ---------- الرسائل ---------- */
-const AUD_AR = { parents: '👪 ولي الأمر', student: '🎓 الطالب', both: '👪🎓 ولي الأمر والطالب', staff: '👥 المعلم والإدارة', teachers: '👨‍🏫 المعلم', school: '🏫 الإدارة فقط' };
-const AUD_HINT = {
-  parents: 'تصل إلى أولياء أمور الطلاب المختارين، ولا يراها الطالب.', student: 'تصل إلى حساب الطالب فقط، ولا يراها ولي الأمر.', both: 'يراها ولي الأمر والطالب.',
-  staff: 'يراها المعلمون وإدارة المدرسة فقط.', teachers: 'يراها المعلم (والإدارة تطّلع عليها تلقائياً).', school: 'تصل إلى إدارة المدرسة فقط، ولا يراها المعلمون الآخرون.'
-};
-const schoolOf = id => db.schools.find(x => x.id === +id) || {};
-/* الخيارات المتاحة لمن يستلم الرسالة بحسب دور الكاتب وسياق المحادثة */
-function audOpts(ctx, sid) {
-  if (isAdmin()) return ['staff'];
-  if (!staff()) return schoolOf((student(sid) || {}).school_id || (db.students[0] || {}).school_id).is_solo ? ['teachers'] : ['staff', 'teachers', 'school'];
-  const solo = !!db.me.solo, mgr = role() === 'school_admin';
-  if (ctx === 'ch') return mgr ? ['staff', 'teachers'] : ['staff', 'teachers', 'school'];
-  if (solo) return ['parents', 'student', 'both'];
-  return mgr ? ['parents', 'student', 'both', 'staff'] : ['parents', 'student', 'both', 'staff', 'school'];
-}
-const audChips = (cur, act, ctx, sid) => audOpts(ctx, sid).map(k => `<button type="button" class="chip ${cur === k ? 'on' : ''}" data-act="${act}" data-id="${k}">${AUD_AR[k]}</button>`).join('');
-const audHint = a => AUD_HINT[a] || '';
-const audDef = (ctx, sid) => { const o = audOpts(ctx, sid), c = ctx === 'ch' ? st.audCh : st.aud; return o.includes(c) ? c : (o.includes('both') ? 'both' : o[0]); };
+const THREAD_SORT = (a, b) => b.last.id - a.last.id;
 function viewMessages() {
   if (st.thread) return viewThread();
-  const rows = db.students.map(s => { const ms = msgsOf(s.id); return { s, last: ms[ms.length - 1], un: unread(s.id) }; })
-    .sort((a, b) => (b.last?.id || 0) - (a.last?.id || 0));
-  const top = staff() ? `<button class="btn gold block" style="margin-bottom:10px" data-act="msg-new">✉️ رسالة جديدة — لطالب أو ولي أمر أو مجموعة أو الجميع</button>`
-    : (db.students.length ? `<button class="btn gold block" style="margin-bottom:12px" data-act="msg-new">✉️ رسالة جديدة إلى المعلم أو الإدارة</button>` : '');
-  const chm = chOn() ? msgsOf(0) : [];
-  const chRow = chOn() ? `<div class="item" data-act="open-thread" data-id="ch" style="margin-bottom:10px"><div class="avatar">🏫</div>
-    <div class="t"><b>قناة طاقم المدرسة</b><small>${chm.length ? esc((chm[chm.length - 1].senderId === db.me.id ? 'أنت: ' : chm[chm.length - 1].senderName + ': ') + chm[chm.length - 1].body.slice(0, 40)) : 'تواصل مع الإدارة والمعلمين الآخرين'}</small></div>
-    <div class="side">${unread(0) ? `<em class="bdg inl">${unread(0)}</em>` : ''}</div></div>` : '';
-  if (!rows.length && !chRow) return `<div class="card">${empty('💬', 'لا يوجد طلاب مرتبطون بحسابك')}</div>`;
-  return `${top}${chRow}<p class="hint" style="margin:0 4px 10px">${staff() ? 'محادثات الطلاب (اضغط لفتح المحادثة والرد)' : 'محادثاتك مع المعلم وإدارة المدرسة'}</p>
-  <div class="list">${rows.map(({ s, last, un }) => `<div class="item" data-act="open-thread" data-id="${s.id}"><div class="avatar">${initial(s.name)}</div>
-    <div class="t"><b>${esc(s.name)}</b><small>${last ? esc((last.senderId === db.me.id ? 'أنت: ' : '') + last.body.slice(0, 42)) : 'لا توجد رسائل — ابدأ المحادثة'}</small></div>
-    <div class="side">${last ? `<small>${fmtT(last.at)}</small>` : ''}${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`).join('')}</div>`;
+  const q = normS(st.cq || '');
+  const convs = peersList().map(p => ({ p, last: dmOf(p).slice(-1)[0], un: dmUnread(p), i: cuInfo(p) })).sort(THREAD_SORT)
+    .filter(c => !q || normS(c.i.n + ' ' + c.i.sub).includes(q));
+  const has = db.contacts.groups.length > 0;
+  const setBtn = isMgr() ? `<button class="btn light sm auto" data-act="chat-cfg" title="صلاحيات التواصل">⚙️ صلاحيات التواصل</button>` : '';
+  return `<div class="row" style="margin-bottom:12px">${has ? '<button class="btn gold" data-act="msg-new">✉️ رسالة جديدة</button>' : ''}${setBtn}</div>
+  ${peersList().length > 6 ? `<input id="cq" type="search" placeholder="🔍 بحث في المحادثات..." value="${esc(st.cq || '')}" style="margin-bottom:10px">` : ''}
+  ${convs.length ? `<div class="list">${convs.map(({ p, last, un, i }) => `<div class="item" data-act="open-thread" data-id="${p}"><div class="avatar">${initial(i.n)}</div>
+    <div class="t"><b>${esc(i.n)}</b><small>${esc((last.from === db.me.id ? 'أنت: ' : '') + last.body.slice(0, 44))}</small></div>
+    <div class="side"><small>${fmtT(last.at)}</small>${un ? `<em class="bdg inl">${un}</em>` : ''}</div></div>`).join('')}</div>`
+    : `<div class="card">${empty('💬', has ? 'لا توجد محادثات بعد — اضغط «رسالة جديدة» لاختيار من تراسله' : 'لا توجد جهات يمكنك مراسلتها حالياً')}</div>`}`;
 }
 function viewThread() {
-  const ch = st.thread === 'ch', sid = ch ? 0 : +st.thread, s = ch ? { id: 0, name: 'قناة طاقم المدرسة' } : student(sid);
-  if (!s || (ch && !chOn())) { st.thread = null; return viewMessages(); }
-  const ms = msgsOf(sid), sf = staff(), ctx = ch ? 'ch' : 'th', aud = audDef(ctx, sid);
-  setTimeout(() => { const b = $('#bub'); if (b) b.scrollTop = b.scrollHeight; markRead(sid); }, 0);
-  const own = m => m.senderId === db.me.id || isMgr();
-  const badge = m => (!sf && m.senderId !== db.me.id) ? '' : `<span class="aud ${m.aud === 'staff' || m.aud === 'school' || m.aud === 'teachers' ? 'in' : ''}" ${sf && own(m) ? `data-act="msg-opt" data-id="${m.id}" style="cursor:pointer"` : ''}>${(m.senderRole === 'parent' || m.senderRole === 'student') ? '↩ ' : ''}${AUD_AR[m.aud] || ''}${sf && own(m) ? ' ⋯' : ''}</span>`;
+  const pid = +st.thread, i = cuInfo(pid), ms = dmOf(pid), can = canMsg(pid);
+  setTimeout(() => { const b = $('#bub'); if (b) b.scrollTop = b.scrollHeight; markRead(pid); }, 0);
   return `<div class="card">
-    <div class="row" style="margin-bottom:10px"><button class="btn light sm auto" data-act="close-thread">→ رجوع</button><b>${ch ? '🏫' : '💬'} ${esc(s.name)}</b></div>
-    <div class="bub" id="bub">${ms.length ? ms.map(m => `<div class="m ${m.senderId === db.me.id ? 'mine' : ''}"><small>${esc(m.senderName)} • ${ROLE_AR[m.senderRole] || ''} ${badge(m)}</small><p>${esc(m.body)}</p><small>${fmtT(m.at)}</small></div>`).join('') : empty('💬', 'لا توجد رسائل بعد')}</div>
-    <div class="hscroll" style="margin-top:10px"><span class="hint" style="align-self:center">إلى:</span>${audChips(aud, 'thr-aud', ctx, sid)}</div><p class="hint" style="margin:6px 0 0">${audHint(aud)}</p>
-    <form id="msgform" class="row" style="margin-top:8px;align-items:flex-end"><textarea id="msgin" rows="2" maxlength="1000" placeholder="اكتب رسالتك...">${esc(st.draft)}</textarea><button class="btn auto">إرسال</button></form>
+    <div class="row" style="margin-bottom:10px;align-items:center"><button class="btn light sm auto" data-act="close-thread">→ رجوع</button>
+      <div style="flex:1;min-width:0"><b>${esc(i.n)}</b><small class="hint" style="display:block">${esc(cuRole(i))}${i.sub ? ' • ' + esc(i.sub) : ''}</small></div></div>
+    <div class="bub" id="bub">${ms.length ? ms.map(m => `<div class="m ${m.from === db.me.id ? 'mine' : ''}"><p>${esc(m.body)}</p><small>${fmtT(m.at)}</small></div>`).join('') : empty('💬', 'محادثة جديدة — اكتب رسالتك الأولى')}</div>
+    ${can ? `<form id="msgform" class="row" style="margin-top:10px;align-items:flex-end"><textarea id="msgin" rows="2" maxlength="1000" placeholder="اكتب رسالتك...">${esc(st.draft)}</textarea><button class="btn auto">إرسال</button></form>`
+      : '<p class="hint" style="margin:10px 0 0">🔒 لا يمكنك إرسال رسائل جديدة إلى هذه الجهة حالياً، والرسائل السابقة محفوظة.</p>'}
   </div>`;
 }
-/* رسالة جديدة للطاقم: اختيار المستلمين (طالب / مجموعة / الجميع) ومن يراها */
-function msgComposeHtml() {
-  if (!staff()) return kidComposeHtml();
-  const groups = [...new Set(db.students.map(s => s.group).filter(Boolean))], aud = audDef('cm');
+/* اختيار جهة جديدة: قوائم بحسب مستواك، ثم محادثة قديمة إن وُجدت أو جديدة */
+function pickerHtml() {
+  const gs = db.contacts.groups, cur = gs.find(g => g.key === st.pg) || gs[0], q = normS(st.pq || '');
+  const list = cur.ids.map(id => ({ id, i: cuInfo(id) })).filter(x => !q || normS(x.i.n + ' ' + x.i.sub).includes(q)).sort((a, b) => a.i.n.localeCompare(b.i.n, 'ar'));
   return `<h2>✉️ رسالة جديدة</h2>
-  <form id="mcform" class="gap">
-    <div><label class="f">إلى من؟</label><div class="hscroll" id="mc_aud">${audChips(aud, 'mc-aud', 'cm')}</div><p class="hint" id="mc_hint" style="margin:6px 0 0">${audHint(aud)}</p></div>
-    <div><label class="f">الطلاب المختارون <span class="hint" id="mc_cnt"></span></label>
-      <input id="mc_q" type="search" placeholder="🔍 بحث عن طالب..." style="margin-bottom:8px">
-      <div class="hscroll" style="margin-bottom:8px"><button type="button" class="chip" data-act="mc-sel" data-id="all">☑ الجميع</button><button type="button" class="chip" data-act="mc-sel" data-id="none">☐ إلغاء الكل</button>${groups.map(g => `<button type="button" class="chip" data-act="mc-sel" data-id="g:${esc(g)}">${esc(g)}</button>`).join('')}</div>
-      <div class="checks" id="mc_list" style="max-height:240px;overflow:auto">${db.students.map(s => `<label data-n="${esc(normS(s.name + ' ' + (s.parent_names || []).join(' ')))}"><input type="checkbox" name="mcs" value="${s.id}" data-g="${esc(s.group || '')}" ${st.thread && +st.thread === s.id ? 'checked' : ''}> ${esc(s.name)}${s.group ? ` <small class="hint">${esc(s.group)}</small>` : ''}<br><small class="hint">${(s.parent_names || []).length ? '👪 ' + esc(s.parent_names.join('، ')) : 'لا يوجد ولي أمر مربوط'}${s.user_id ? ' • 🎓 له حساب' : ''}</small></label>`).join('')}</div></div>
-    <div><label class="f">الرسالة</label><textarea name="body" rows="4" maxlength="1000" required placeholder="اكتب رسالتك..."></textarea></div>
-    <button class="btn block gold">إرسال</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
-  </form>`;
+  <div class="hscroll" style="margin-bottom:10px">${gs.map(g => `<button type="button" class="chip ${g.key === cur.key ? 'on' : ''}" data-act="pick-g" data-id="${g.key}">${esc(g.label)} (${g.ids.length})</button>`).join('')}</div>
+  <input id="pk_q" type="search" placeholder="🔍 بحث بالاسم..." value="${esc(st.pq || '')}" style="margin-bottom:10px" autocomplete="off">
+  <div class="list" id="pk_list" style="max-height:52vh;overflow:auto">${list.length ? list.map(({ id, i }) => `<div class="item" data-act="open-thread" data-id="${id}"><div class="avatar">${initial(i.n)}</div>
+    <div class="t"><b>${esc(i.n)}</b><small>${esc(cuRole(i))}${i.sub ? ' • ' + esc(i.sub) : ''}</small></div><div class="side">${dmOf(id).length ? '<small>💬 محادثة سابقة</small>' : ''}</div></div>`).join('') : empty('🔍', 'لا نتائج')}</div>
+  <button type="button" class="btn light block" style="margin-top:10px" data-act="close">إغلاق</button>`;
 }
-/* ولي الأمر / الطالب: رسالة جديدة إلى المعلم أو الإدارة */
-function kidComposeHtml() {
-  const kids = db.students, sid0 = st.kid && kids.some(k => k.id === st.kid) ? st.kid : kids[0].id, aud = audDef('kid', sid0);
-  return `<h2>✉️ رسالة جديدة</h2>
-  <form id="kcform" class="gap">
-    ${kids.length > 1 ? `<div><label class="f">بخصوص</label><select name="sid">${kids.map(k => `<option value="${k.id}">${esc(k.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="sid" value="${sid0}"><p class="hint" style="margin:0">بخصوص: <b>${esc(kids[0].name)}</b></p>`}
-    <div><label class="f">إلى من؟</label><div class="hscroll" id="mc_aud">${audChips(aud, 'kc-aud', 'kid', sid0)}</div><p class="hint" id="mc_hint" style="margin:6px 0 0">${audHint(aud)}</p></div>
-    <div><label class="f">الرسالة</label><textarea name="body" rows="4" maxlength="1000" required placeholder="اكتب رسالتك..."></textarea></div>
-    <button class="btn block gold">إرسال</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
-  </form>`;
+function chatCfgHtml(sid) {
+  const sc = db.schools.find(x => x.id === +sid) || db.schools[0] || {}, c = sc.chat || {};
+  const sw2 = (n, l, on, h) => `<label class="sw"><span>${l}<small>${h}</small></span><input type="checkbox" name="${n}" ${on ? 'checked' : ''}></label>`;
+  return `<h2>⚙️ صلاحيات التواصل</h2>
+  <form id="ccform" class="gap" data-sid="${sc.id || ''}">
+    ${isAdmin() && db.schools.length > 1 ? `<div><label class="f">المدرسة</label><select name="school" id="cc_school">${db.schools.map(x => `<option value="${x.id}" ${x.id === sc.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : (sc.name ? `<p class="hint" style="margin:0">${esc(sc.name)}</p>` : '')}
+    ${sw2('st_teachers', 'الطالب يراسل بقية المعلمين', c.st_teachers, 'إضافة إلى معلميه ومدير المدرسة وولي أمره (يعمل دائماً)')}
+    ${sw2('st_students', 'الطالب يراسل الطلاب الآخرين', c.st_students, 'طلاب المدرسة الذين لهم حسابات')}
+    ${sw2('pa_teachers', 'ولي الأمر يراسل بقية المعلمين', c.pa_teachers, 'إضافة إلى معلمي أبنائه وإدارة المدرسة (يعمل دائماً)')}
+    <p class="hint" style="margin:0">عند الإيقاف تبقى الرسائل القديمة ظاهرة، لكن لا يمكن إرسال رسائل جديدة إلى هذه الجهات.</p>
+    <button class="btn block">حفظ</button><button type="button" class="btn light block" data-act="close">إلغاء</button></form>`;
 }
-function mcCount() { const c = $('#mc_cnt'); if (c) c.textContent = '(' + document.querySelectorAll('#mc_list input:checked').length + ' من ' + db.students.length + ')'; }
 
 /* ---------- الإدارة (مدير) ---------- */
 const soloSchool = s => !!s.is_solo || db.users.some(u => u.school_id === s.id && u.solo);
@@ -894,9 +873,14 @@ const acts = {
     if (v === 'cert') { sty.textContent = '@page{size:A4 landscape;margin:0}'; document.head.appendChild(sty); }
     window.print(); setTimeout(() => { document.title = t; sty.remove(); }, 800);
   },
+  'chat-teacher': (id, el, draft) => {
+    const s = student(id), c = s ? [...(s.teachers || []), s.teacher_id].filter(Boolean).find(canMsg) : null;
+    if (!c) return toast('لا يمكنك مراسلة معلم هذا الطالب حالياً');
+    if (draft) st.draft = draft; go('messages', { thread: c });
+  },
   'msg-rec': id => {
-    const r = db.records.find(x => x.id === +id);
-    st.draft = `بخصوص تسميع ${recText(r)} بتاريخ ${r.date}: `; go('messages', { thread: r.studentId });
+    const r = db.records.find(x => x.id === +id); if (!r) return;
+    acts['chat-teacher'](r.studentId, null, `بخصوص تسميع ${recText(r)} بتاريخ ${r.date}: `);
     setTimeout(() => { const m = $('#msgin'); if (m) { m.focus(); m.setSelectionRange(m.value.length, m.value.length); } }, 60);
   },
   'open-stmt': id => go('statement', { sid: +id, sp: new Date().getDate() <= 7 ? 'last' : 'month' }),
@@ -909,28 +893,16 @@ const acts = {
   'open-cert': id => go('cert', { cid: +id }),
   'cert-new': id => certForm(id),
   'del-cert': async id => { if (!confirm('حذف هذه الشهادة نهائياً؟')) return; await api('cert_delete', { id: +id }); db.certs = db.certs.filter(c => c.id !== +id); go('student'); toast('تم حذف الشهادة'); },
-  'open-thread': id => go('messages', { thread: id === 'ch' ? 'ch' : +id }),
+  'open-thread': id => { closeModal(); go('messages', { thread: +id }); },
   'close-thread': () => { st.thread = null; st.draft = ''; render(); },
   logout,
   lm: id => { st.lm = id; render(); },
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
   'fs-all': async () => { st.fs = ''; try { localStorage.setItem('tahfidh_fs', ''); } catch { } await refresh(); st.adm = {}; closeModal(); render(); toast('تم عرض كل المدارس — افتح «إضافة ولي أمر» من جديد'); },
-  'msg-new': () => { st.cmAud = audDef('cm'); st.kcAud = null; modal(msgComposeHtml()); mcCount(); },
-  'mc-aud': id => { st.cmAud = id; $('#mc_aud').innerHTML = audChips(id, 'mc-aud', 'cm'); $('#mc_hint').textContent = audHint(id); },
-  'kc-aud': id => { st.kcAud = id; const f = $('#kcform'); $('#mc_aud').innerHTML = audChips(id, 'kc-aud', 'kid', +f.sid.value); $('#mc_hint').textContent = audHint(id); },
-  'mc-sel': id => {
-    const boxes = [...document.querySelectorAll('#mc_list label:not([hidden]) input')];
-    boxes.forEach(b => { if (id === 'all') b.checked = true; else if (id === 'none') b.checked = false; else if (b.dataset.g === id.slice(2)) b.checked = true; });
-    mcCount();
-  },
-  'thr-aud': id => { if (st.thread === 'ch') st.audCh = id; else st.aud = id; render(); },
-  'msg-opt': id => {
-    const m = db.messages.find(x => x.id === +id); if (!m) return;
-    modal(`<h2>⋯ الرسالة</h2><p class="hint" style="margin-top:0">${esc(m.body.slice(0, 120))}</p><label class="f">من يراها؟</label><div class="hscroll" style="margin-bottom:12px">${audChips(m.aud, 'msg-aud:' + m.id, m.studentId === 0 ? 'ch' : 'th', m.studentId)}</div>
-      <div class="gap"><button class="btn red block" data-act="msg-del" data-id="${m.id}">🗑 حذف الرسالة</button><button class="btn light block" data-act="close">إغلاق</button></div>`);
-  },
-  'msg-del': async id => { if (!confirm('حذف هذه الرسالة نهائياً؟')) return; await api('message_edit', { id: +id, action: 'delete' }); db.messages = db.messages.filter(x => x.id !== +id); closeModal(); render(); toast('تم الحذف'); },
+  'msg-new': () => { st.pg = null; st.pq = ''; modal(pickerHtml()); },
+  'pick-g': id => { st.pg = id; modal(pickerHtml()); },
+  'chat-cfg': () => modal(chatCfgHtml(db.me.school_id || (db.schools[0] || {}).id)),
   'em-cancel': () => { st.emv = null; render(); },
   hs: (d, el) => { const s = el.parentElement.querySelector('.hscroll'); if (s) s.scrollBy({ left: +d * 220, behavior: 'smooth' }); },
   feedback: async () => {
@@ -972,13 +944,13 @@ const acts = {
 };
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
-  if (el.dataset.act.startsWith('msg-aud:')) { run(async () => { const mid = +el.dataset.act.slice(8); await api('message_edit', { id: mid, aud: el.dataset.id }); const m = db.messages.find(x => x.id === mid); if (m) m.aud = isAdmin() ? 'staff' : el.dataset.id; closeModal(); render(); toast('تم التحديث'); })(); return; }
   const fn = acts[el.dataset.act]; if (fn) run(fn)(el.dataset.id, el);
 });
 
 document.addEventListener('input', e => {
   const t = e.target;
-  if (t.id === 'mc_q') { const q = normS(t.value); document.querySelectorAll('#mc_list label').forEach(l => { l.hidden = !!q && !(l.dataset.n || '').includes(q); }); return; }
+  if (t.id === 'pk_q') { st.pq = t.value; const l = $('#pk_list'); if (l) { const h = pickerHtml(); const d = document.createElement('div'); d.innerHTML = h; l.innerHTML = d.querySelector('#pk_list').innerHTML; } return; }
+  if (t.id === 'cq') { st.cq = t.value; const p = t.selectionStart; render(); const c = $('#cq'); if (c) { c.focus(); c.setSelectionRange(p, p); } return; }
   if (t.id === 'q') { st.q = t.value; const p = t.selectionStart; render(); const q = $('#q'); q.focus(); q.setSelectionRange(p, p); return; }
   if (t.id === 'msgin') { st.draft = t.value; return; }
   if (!t.dataset.f || !st.form) return;
@@ -1016,27 +988,6 @@ document.addEventListener('submit', run(async e => {
     f.reset(); db.me.must_change = false; render();
     toast('تم تغيير كلمة المرور ✔'); return;
   }
-  if (f.id === 'msgform') {
-    const text = $('#msgin').value.trim(); if (!text) return;
-    const ch = st.thread === 'ch', sid = ch ? 0 : +st.thread;
-    const r = ch ? await api('message_staff', { body: text, aud: audDef('ch') }) : await api('message_send', { studentId: sid, body: text, aud: audDef('th', sid) });
-    db.messages.push(r.message); st.draft = ''; render(); return;
-  }
-  if (f.id === 'rpform') {
-    const id = +f.dataset.id, r = await api('reset_password', { id, password: f.pw.value.trim(), must_change: f.must.checked }), u = userById(id) || {};
-    showCreds(u.name || r.username, r.username, r.password, u.phone, null, u.email); return;
-  }
-  if (f.id === 'kcform') {
-    const sid = +f.sid.value, r = await api('message_send', { studentId: sid, body: f.body.value, aud: st.kcAud || audDef('kid', sid) });
-    db.messages.push(r.message); closeModal(); st.kcAud = null; st.thread = sid; st.view = 'messages'; render(); toast('أُرسلت رسالتك ✔'); return;
-  }
-  if (f.id === 'mcform') {
-    const ids = [...f.querySelectorAll('[name=mcs]:checked')].map(x => +x.value);
-    if (!ids.length) return toast('اختر طالباً واحداً على الأقل');
-    const r = await api('message_multi', { studentIds: ids, aud: st.cmAud || audDef('cm'), body: f.body.value });
-    db.messages.push(...r.messages); closeModal(); st.thread = ids.length === 1 ? ids[0] : null; st.view = 'messages'; render();
-    toast(r.unreached ? `أُرسلت، لكن ${r.unreached} طالب ليس له حساب لهذه الفئة فلن تصله` : `أُرسلت إلى ${ids.length} طالب ✔`); return;
-  }
   if (f.id === 'emform') {
     const email = f.email.value.trim().toLowerCase(); await api('email_code', { email });
     st.emv = { sent: true, email }; render(); toast('أرسلنا الرمز إلى بريدك'); return;
@@ -1048,6 +999,20 @@ document.addEventListener('submit', run(async e => {
     await api('feedback_send', { kind: f.kind.value, name: f.name.value, email: f.email.value, message: f.message.value, website: f.website.value, tk: st.tk });
     if (db.me) { closeModal(); toast('وصلتنا رسالتك، جزاك الله خيراً ✔'); } else { st.fbDone = true; render(); }
     return;
+  }
+  if (f.id === 'rpform') {
+    const id = +f.dataset.id, r = await api('reset_password', { id, password: f.pw.value.trim(), must_change: f.must.checked }), u = userById(id) || {};
+    showCreds(u.name || r.username, r.username, r.password, u.phone, null, u.email); return;
+  }
+  if (f.id === 'msgform') {
+    const text = $('#msgin').value.trim(); if (!text) return;
+    const r = await api('chat_send', { to: +st.thread, body: text });
+    db.dm.push(r.message); st.draft = ''; render(); return;
+  }
+  if (f.id === 'ccform') {
+    const sid = f.school ? +f.school.value : +f.dataset.sid;
+    const r = await api('chat_settings', { school_id: sid, st_teachers: f.st_teachers.checked, st_students: f.st_students.checked, pa_teachers: f.pa_teachers.checked });
+    const sc = db.schools.find(x => x.id === r.school_id); if (sc) sc.chat = r.chat; closeModal(); toast('تم حفظ صلاحيات التواصل ✔'); return;
   }
   if (f.id === 'signupform') {
     if (f.pw.value !== f.pw2.value) return toast('كلمتا المرور غير متطابقتين');
@@ -1114,7 +1079,7 @@ document.addEventListener('submit', run(async e => {
 
 document.addEventListener('change', run(async e => {
   const t = e.target;
-  if (t.name === 'mcs') mcCount();
+  if (t.id === 'cc_school') { const sc = db.schools.find(x => x.id === +t.value) || {}, c = sc.chat || {}, f = $('#ccform'); ['st_teachers', 'st_students', 'pa_teachers'].forEach(k => { f[k].checked = !!c[k]; }); }
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
   if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
@@ -1133,13 +1098,14 @@ document.addEventListener('change', run(async e => {
 async function pollOnce() {
   if (!db.me || document.hidden) return;
   try {
-    const since = db.messages.reduce((m, x) => Math.max(m, x.id), 0);
-    const r = await api('poll', null, '&since=' + since);
+    const dmSince = db.dm.reduce((m, x) => Math.max(m, x.id), 0);
+    const r = await api('poll', null, '&dm_since=' + dmSince);
     if (r.role !== db.me.role || !!r.solo !== !!db.me.solo) { await refresh(); st.mt = 'requests'; render(); toast('تم تحديث صلاحياتك'); return; }
     if (isMgr() && r.pending !== db.requests.length) { await refresh(); updateTabbar(); if (st.view === 'manage') render(); else toast('📝 طلب تسجيل جديد'); return; }
-    if (!r.messages.length) return;
-    db.messages.push(...r.messages);
-    const fresh = r.messages.some(m => m.senderId !== db.me.id);
+    if (!r.dm || !r.dm.length) return;
+    const have = new Set(db.dm.map(x => x.id)); const nw = r.dm.filter(x => !have.has(x.id)); if (!nw.length) return;
+    db.dm.push(...nw);
+    const fresh = nw.some(m => m.from !== db.me.id);
     if (st.view === 'messages') render(); else { updateTabbar(); if (fresh) toast('📩 وصلتك رسالة جديدة'); }
   } catch { }
 }
