@@ -604,7 +604,7 @@ function viewManage() {
     : db.me.solo ? [['parent', 'أولياء الأمور'], ['myschool', 'حلقتي']] : [[rq[0], 'الطلبات' + (db.requests.length ? ' (' + db.requests.length + ')' : '')], ['teacher', 'المعلمون'], ['parent', 'أولياء الأمور'], ['myschool', 'مدرستي']];
   if (isAdmin() && !st.mtInit) { st.mt = 'overview'; st.mtInit = true; }
   if (!T.some(x => x[0] === st.mt)) st.mt = T[0][0];
-  const chips = isAdmin() ? `<div class="hscroll" style="margin-bottom:12px">${T.map(([k, l]) => `<button class="chip ${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}">${l}</button>`).join('')}</div>`
+  const chips = isAdmin() ? `<div class="hsw"><button type="button" class="hsa" data-act="hs" data-id="1" aria-label="السابق">›</button><div class="hscroll" id="mtabs">${T.map(([k, l]) => `<button class="chip ${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}">${l}</button>`).join('')}</div><button type="button" class="hsa" data-act="hs" data-id="-1" aria-label="التالي">‹</button></div>`
     : `<div class="seg" style="margin-bottom:12px;flex-wrap:wrap">${T.map(([k, l]) => `<button class="${st.mt === k ? 'on' : ''}" data-act="mtab" data-id="${k}" style="font-size:13px">${l}</button>`).join('')}</div>`;
   if (['overview', 'inbox', 'auth', 'platform', 'audit'].includes(st.mt)) return `<div class="card">${chips}</div>${adminSection(st.mt)}`;
   let list, addBtn = '';
@@ -760,6 +760,7 @@ function render() {
   shell(views[st.view]());
   if (st.view === 'add') updateInfo();
   if (['report', 'monthly', 'cert', 'statement'].includes(st.view)) fitReport();
+  { const c = $('#mtabs .chip.on'); if (c) c.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   if (st.view === 'manage' && isAdmin()) loadAdminTab();
   if (st.view === 'search') { const q = $('#sq'); if (q && document.activeElement !== q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
   if (fa === 'msgin' && $('#msgin')) { const m = $('#msgin'); m.focus(); m.setSelectionRange(m.value.length, m.value.length); }
@@ -832,6 +833,7 @@ const acts = {
   lm: id => { st.lm = id; render(); },
   'otp-change': () => { st.otp = null; render(); },
   'otp-resend': async () => { const o = st.otp; if (!o) return; await api('otp_send', o.ch === 'email' ? { channel: 'email', email: o.ident } : { channel: o.ch, phone: o.ident }); toast('أُعيد إرسال الرمز ✔'); },
+  hs: (d, el) => { const s = el.parentElement.querySelector('.hscroll'); if (s) s.scrollBy({ left: +d * 220, behavior: 'smooth' }); },
   feedback: async () => {
     const r = await api('feedback_token'); st.tk = r.tk; st.fbDone = false;
     if (db.me) modal(`<h2>💬 تواصل واقتراحات</h2>${feedbackForm()}`); else { st.view = 'feedback'; render(); }
