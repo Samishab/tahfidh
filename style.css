@@ -346,7 +346,7 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .about h2{font-size:22px;color:var(--g1)}
 .ab-body p{margin:0 0 12px;font-size:16.5px;line-height:2}.ab-h{margin:18px 0 8px;color:var(--g1);font-size:18px}
 .ab-ul{margin:0 0 12px;padding-inline-start:22px}.ab-ul li{margin-bottom:7px;font-size:16px;line-height:1.8}
-.ab-page{display:block;padding-bottom:40px}.ab-wrap{position:relative;max-width:760px;margin:0 auto;display:flex;flex-direction:column}.ab-wrap .card{margin-bottom:14px}
+.ab-page{display:block;padding-bottom:40px}.ab-wrap{position:relative;max-width:1200px;margin:0 auto;display:flex;flex-direction:column}.ab-wrap .card{margin-bottom:14px}
 
 .ab-sec{margin:26px 0 10px;padding-bottom:8px;border-bottom:2px solid var(--g3);color:var(--g1);font-size:21px}
 .ab-ayah{font-family:'Amiri',serif;font-size:21px;line-height:2.1;color:var(--g1);background:var(--g3);border-radius:14px;padding:10px 16px;margin:0 0 10px}
@@ -369,12 +369,11 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 @media (min-width:960px){
   .auth:not(.login-page):not(.ab-page) .card{max-width:600px}
   .auth:not(.login-page):not(.ab-page) .betanote{max-width:600px}
-  .ab-page{padding-inline:max(40px,calc((100% - 1180px)/2));padding-top:30px}
-  .ab-wrap{max-width:none;display:grid;grid-template-columns:1fr 420px;grid-template-areas:"waqf waqf" "about form" "back back";column-gap:36px;align-items:start}
-  .ab-wrap .waqf-top{grid-area:waqf;font-size:19px}
-  .ab-wrap .card.about{grid-area:about;padding:28px 34px}
-  .ab-wrap .card:not(.about){grid-area:form;position:sticky;top:20px}
-  .ab-wrap>.btn{grid-area:back;max-width:420px;justify-self:center;margin-top:6px}
+  .ab-page{padding-inline:28px;padding-top:30px}
+  .ab-wrap{max-width:1200px;width:100%;margin:0 auto;display:flex;flex-direction:column}
+  .ab-wrap .waqf-top{font-size:19px}
+  .ab-wrap .card.about{padding:28px 34px}
+  .ab-wrap>.btn{max-width:420px;align-self:center;margin-top:6px}
   .ab-body p{font-size:17.5px}
 }
 @media (min-width:960px){.auth .ab-wrap .card{max-width:none}}
