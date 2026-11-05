@@ -204,7 +204,7 @@ function renderLogin() {
         ${ms.includes('email') ? '<button type="button" class="btn light block sm" data-act="lm" data-id="email">نسيت كلمة المرور؟ ادخل برمز يصل بريدك</button>' : ''}
       </form>`;
   $('#app').innerHTML = `
-  <div class="auth">
+  <div class="auth login-page">
     ${waqfTop()}
     <div class="verse top">﴿ وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ ﴾</div>
     <div class="brand">${logoImg()}<h1>${esc(br.name)}</h1><p>${esc(br.tagline || 'سجّل دخولك لمتابعة الحفظ والمراجعة')}</p><div class="hadith">يجيءُ صاحبُ القرآنِ يومَ القيامةِ فيقولُ القرآنُ يا ربِّ حَلِّه فيلبسُ تاجَ الكرامةِ ثمَّ يقولُ يا ربِّ زِدْه فيلبسُ حُلَّةَ الكرامةِ ثمَّ يقولُ يا ربِّ ارضَ عنه فيرضَى عنه فيُقالُ له اقرأْ وارقَ ويزدادُ بكلِّ آيةٍ حسنةً<small>رواه الترمذي</small></div></div>

@@ -352,3 +352,15 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .ab-ayah{font-family:'Amiri',serif;font-size:21px;line-height:2.1;color:var(--g1);background:var(--g3);border-radius:14px;padding:10px 16px;margin:0 0 10px}
 .ab-q{margin:0 0 14px;padding:12px 16px;border-inline-start:4px solid var(--gold);background:var(--gold2);border-radius:12px;font-family:'Amiri',serif;font-size:19px;line-height:2.1}
 .ab-q cite{display:block;margin-top:8px;font-family:'Tajawal',sans-serif;font-style:normal;font-size:13.5px;line-height:1.7;color:var(--mut)}
+
+@media (min-width:960px){
+  .auth .card{max-width:520px}
+  .auth.login-page{display:grid;grid-template-columns:1fr minmax(420px,500px);grid-template-areas:"waqf waqf" "brand card" "verse card";grid-template-rows:auto auto 1fr;column-gap:72px;align-content:center;align-items:center;padding-inline:max(48px,calc((100% - 1120px)/2));padding-block:34px}
+  .auth.login-page .waqf-top{grid-area:waqf;font-size:19px;margin-bottom:10px}
+  .auth.login-page .brand{grid-area:brand;align-self:end;margin:0 0 10px}
+  .auth.login-page .brand .logo{width:120px;height:120px;border-radius:32px}
+  .auth.login-page .brand h1{font-size:34px}.auth.login-page .brand p{font-size:18px}
+  .auth.login-page .hadith{max-width:none;font-size:19px}
+  .auth.login-page .verse{grid-area:verse;align-self:start;font-size:22px;margin:10px 0 0}
+  .auth.login-page .card{grid-area:card;max-width:none;margin:0;padding:28px 26px;align-self:center}
+}
