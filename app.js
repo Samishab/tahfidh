@@ -48,6 +48,8 @@ const weekStart = d => addDays(d, -((d.getDay() - WS + 7) % 7));
 const L = 'ar-u-nu-latn';
 const fmtDay = d => d.toLocaleDateString(L, { weekday: 'long' });
 const fmtG = d => d.toLocaleDateString(L, { day: 'numeric', month: 'long', year: 'numeric' });
+const dmy = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+const fmtDMY = d => `${fmtDay(d)} | ${dmy(d)}`;
 const fmtS = d => d.toLocaleDateString(L, { day: 'numeric', month: 'short' });
 const fmtH = d => d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
 const fmtT = s => new Date(s).toLocaleString(L, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -349,7 +351,7 @@ function recCard(r, opts = {}) {
       ${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : ''}${r.redo ? '<span class="badge">↺ إعادة</span>' : ''}${enrTag(r)}
       ${opts.noName || !s ? '' : `<span class="who">${esc(s.name)}</span>`}</div>
     <div class="sn">${recText(r)}</div>
-    <div class="meta">${ayahs(r)} آية • ${Q.juzText(r.surah, r.from, r.to, rEnd(r))} • ${fmtDay(d)} ${fmtS(d)}</div>
+    <div class="meta">${ayahs(r)} آية • ${Q.juzText(r.surah, r.from, r.to, rEnd(r))} • ${fmtDMY(d)}</div>
     ${r.note ? `<div class="meta">📝 ${esc(r.note)}</div>` : ''}
     ${staff() ? `<div class="acts"><button class="btn light sm" data-act="edit-rec" data-id="${r.id}">تعديل</button><button class="btn red sm" data-act="del-rec" data-id="${r.id}">حذف</button></div>` : ''}
   </div>`;
@@ -435,8 +437,8 @@ ${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-sel
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
   </div>
-  ${st.fixed && f.sid && !f.id ? (() => { const mine = db.records.filter(r => r.studentId === +f.sid), top5 = mine.slice().sort(recSort).slice(0, 5), newest = mine.slice().sort((x, y) => y.id - x.id)[0], rc = newest && !top5.some(r => r.id === newest.id) ? top5.concat(newest) : top5;
-    return rc.length ? `<div class="card"><h3>🕘 آخر تسميعاته</h3>${recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id })}</div>` : ''; })() : ''}`;
+  ${st.fixed && f.sid && !f.id ? (() => { const mine = db.records.filter(r => r.studentId === +f.sid), ym = String(f.date).slice(0, 7), inM = mine.filter(r => r.date.slice(0, 7) === ym), base = inM.length ? inM : mine.slice().sort(recSort).slice(0, 5), newest = mine.slice().sort((x, y) => y.id - x.id)[0], rc = newest && !base.some(r => r.id === newest.id) ? base.concat(newest) : base, mname = parse(f.date).toLocaleDateString(L, { month: 'long', year: 'numeric' });
+    return rc.length ? `<div class="card"><h3>🕘 ${inM.length ? `تسميعات ${mname} (${inM.length})` : 'آخر تسميعاته'}</h3>${newest && !base.some(r => r.id === newest.id) ? '<p class="hint" style="margin:0 0 6px">الصف الأصفر: آخر ما أدخلته (تاريخه خارج هذا الشهر)</p>' : ''}${recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id })}</div>` : ''; })() : ''}`;
 }
 function checkForm() {
   const f = st.form, s = +f.surah, s2 = +(f.surahTo || f.surah), a = +f.from, b = +f.to;
@@ -462,7 +464,7 @@ function overlapsFor(f) {
 function overlapModal(ov) {
   modal(`<h2>⚠ آيات سُمِّعت من قبل</h2>
   <p class="hint" style="margin-top:0">هذا التسميع يتداخل مع تسميع مسجّل سابقاً، ولن يُحفظ إلا بعد التأكيد:</p>
-  <div class="list" style="margin-bottom:12px">${ov.slice(0, 4).map(r => { const d = parse(r.date); return `<div class="item" style="cursor:default"><div class="t"><b>${recText(r)}</b><small>${typeAr(r)} • ${fmtDay(d)} ${fmtS(d)}${r.note ? ' • ' + esc(r.note.slice(0, 30)) : ''}</small></div></div>`; }).join('')}${ov.length > 4 ? `<p class="hint">+ ${ov.length - 4} تسميعات أخرى</p>` : ''}</div>
+  <div class="list" style="margin-bottom:12px">${ov.slice(0, 4).map(r => { const d = parse(r.date); return `<div class="item" style="cursor:default"><div class="t"><b>${recText(r)}</b><small>${typeAr(r)} • ${fmtDMY(d)}${r.note ? ' • ' + esc(r.note.slice(0, 30)) : ''}</small></div></div>`; }).join('')}${ov.length > 4 ? `<p class="hint">+ ${ov.length - 4} تسميعات أخرى</p>` : ''}</div>
   <form id="ovform" class="gap">
     <label class="row" style="gap:8px;font-weight:700"><input type="checkbox" name="ok" required style="width:auto;flex:none"> أؤكد أن هذا تسميع مكرر وأريد حفظه</label>
     <div><label class="f">السبب</label><select name="why"><option>إعادة</option><option>تصحيح خطأ</option><option>إدخال تسميع قديم</option><option value="">سبب آخر</option></select></div>
@@ -614,7 +616,7 @@ function recTable(recs, o = {}) {
       return `<tr class="${o.hl === r.id ? 'hl' : ''}"><td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}"><span class="bi">${{ hifz: '📖', review: '🔁', qiraa: '📚' }[r.type]}</span><span class="bt"> ${typeAr(r)}</span></span>${r.redo ? ' <small title="إعادة">↺</small>' : ''}</td>
       ${o.who ? `<td>${s ? esc(s.name) : ''}</td>` : ''}${hasQ ? `<td class="hm">${en ? esc(en.label) : ''}</td>` : ''}
       <td style="text-align:start"><b>${rngName(r)}</b> <small>${r.from}–${r.to}</small><small class="mo"> • ${ayahs(r)} آية</small></td><td class="hm">${ayahs(r)}</td>
-      <td><b>${fmtDay(d)}</b> <small>${fmtS(d)}</small></td><td class="hm">${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td class="hm">${r.type === 'qiraa' ? '<span class="hint">—</span>' : gradeBadge(r)}</td>` : ''}
+      <td>${fmtDMY(d)}</td><td class="hm">${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td class="hm">${r.type === 'qiraa' ? '<span class="hint">—</span>' : gradeBadge(r)}</td>` : ''}
       <td class="hm nt" style="text-align:start" title="${esc(r.note)}">${r.note ? esc(r.note) : ''}</td>
       <td class="ra"><button class="ib" data-act="rec-view" data-id="${r.id}" title="عرض">👁</button>${sf ? `<button class="ib" data-act="edit-rec" data-id="${r.id}" title="تعديل">✏️</button><button class="ib" data-act="del-rec" data-id="${r.id}" title="حذف">🗑</button>` : `<button class="ib" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم">💬</button>`}</td></tr>`; }).join('')}</table></div>${filtered.length > cut.length && f === 'all' ? `<p class="hint" style="text-align:center">يعرض آخر ${cut.length} من ${filtered.length} تسميع</p>` : ''}`;
 }
@@ -1031,6 +1033,7 @@ document.addEventListener('click', e => {
   const fn = acts[el.dataset.act]; if (fn) run(fn)(el.dataset.id, el);
 });
 
+document.addEventListener('toggle', e => { const d = e.target; if (d && d.dataset && d.dataset.tg) st[d.dataset.tg] = d.open; }, true);
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'pk_q') { st.pq = t.value; const l = $('#pk_list'); if (l) { const h = pickerHtml(); const d = document.createElement('div'); d.innerHTML = h; l.innerHTML = d.querySelector('#pk_list').innerHTML; } return; }

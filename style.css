@@ -400,3 +400,12 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .rt2 td,.rt2 th{white-space:nowrap}.rt2 tr.hl td{background:#fff8dc}
 .oneln td,.oneln th{white-space:nowrap}.rp-tbl .oneln td:nth-child(n){text-align:center}
 @media (max-width:640px){.rt2 .hm{display:none}}
+
+.dn-det{border:1.5px solid var(--line);border-radius:14px;padding:0 12px;margin:6px 0 10px;background:#fff}
+.dn-det>summary{cursor:pointer;font-weight:800;font-size:14.5px;padding:11px 0;list-style:none;display:flex;align-items:center;gap:8px;color:var(--g1)}
+.dn-det>summary::-webkit-details-marker{display:none}
+.dn-det>summary:after{content:"▾";margin-inline-start:auto;font-size:16px;transition:transform .2s}
+.dn-det[open]>summary:after{transform:rotate(180deg)}
+.dn-det[open]>summary{border-bottom:1px solid var(--line);margin-bottom:8px}
+.dn .nt{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn-det .info{margin-bottom:12px}

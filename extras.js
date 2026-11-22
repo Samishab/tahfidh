@@ -193,9 +193,13 @@ function progCard(s) {
     ${s.hafiz ? `<div class="info" style="text-align:start;margin-bottom:10px">✅ حافظ للمصحف${s.hafizWhere ? ' — أتمّه: ' + esc(s.hafizWhere) : ''}${s.hafizNote ? `<br><small>${esc(s.hafizNote)}</small>` : ''}</div>` : ''}
     ${staff() && can ? `<div class="row" style="margin-bottom:10px"><button class="btn gold sm" data-act="enr-new" data-id="${s.id}">＋ برنامج قراءة</button><button class="btn ghost sm" data-act="enr-prior" data-id="${s.id}">＋ قراءة سابقة</button></div>` : (staff() ? '<p class="hint">لإضافة برنامج قراءات يفعّل المعلم «إعدادات القراءات» من حسابه.</p>' : '')}
     ${act.length ? `<h3 style="font-size:14px;margin:6px 0">البرامج الجارية</h3><div class="list" style="margin-bottom:10px">${act.map(row).join('')}</div>` : ''}
-    ${dn.length ? `<h3 style="font-size:14px;margin:6px 0">✅ القراءات المنجزة (${dn.length})</h3><div class="list" style="margin-bottom:10px">${dn.map(row).join('')}</div>
-      <div class="info" style="text-align:start"><b>🏅 أتمّ ${rd.qurra} من 10 قراء • ${rd.riwayat} من 20 رواية</b>
-      <div class="chips" style="margin-top:8px">${rd.rows.map(r => `<span class="chip static ${r.n === r.tot ? 'on' : ''}" style="${r.n && r.n < r.tot ? 'border-color:var(--gold)' : ''}">${r.qn}${r.n && r.n < r.tot ? ' ½' : ''}</span>`).join('')}</div></div>` : ''}
+    ${dn.length ? `<details class="dn-det" data-tg="dnOpen" ${st.dnOpen ? 'open' : ''}><summary>✅ القراءات المنجزة (${dn.length})</summary>
+      <div class="tw"><table class="rt rt2 dn"><tr><th style="text-align:start">القراءة</th><th style="text-align:start">الشيخ</th><th>تاريخ البدء</th><th>تاريخ الإكمال</th>${staff() ? '<th></th>' : ''}</tr>
+      ${dn.map(en => `<tr><td style="text-align:start"><b>${esc(en.label)}</b>${en.prior ? ' <small class="hint">• قبل الالتحاق</small>' : ''}</td><td class="nt" style="text-align:start" title="${esc(en.shaykh)}">${en.shaykh ? esc(en.shaykh) : '<span class="hint">—</span>'}</td>
+        <td>${en.startedAt ? fmtDMY(parse(en.startedAt)) : '<span class="hint">—</span>'}</td><td>${en.completedAt ? fmtDMY(parse(en.completedAt)) : '<span class="hint">—</span>'}</td>
+        ${staff() ? `<td class="ra"><button class="ib" data-act="enr-reopen" data-id="${en.id}" title="إعادة فتح">↩</button><button class="ib" data-act="enr-del" data-id="${en.id}" title="حذف">🗑</button></td>` : ''}</tr>`).join('')}</table></div>
+      <div class="info" style="text-align:start;margin-top:10px"><b>🏅 أتمّ ${rd.qurra} من 10 قراء • ${rd.riwayat} من 20 رواية</b>
+      <div class="chips" style="margin-top:8px">${rd.rows.map(r => `<span class="chip static ${r.n === r.tot ? 'on' : ''}" style="${r.n && r.n < r.tot ? 'border-color:var(--gold)' : ''}">${r.qn}${r.n && r.n < r.tot ? ' ½' : ''}</span>`).join('')}</div></div></details>` : ''}
   </div>`;
 }
 function enrollForm(sid, prior) {

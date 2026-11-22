@@ -104,7 +104,7 @@ function rptTables(recs) {
   const ss = st.ss || { k: 'date', d: 1 }, rows = sortRecs(recs, ss), H = (k, l) => sortHead('ssort', k, l, ss);
   return `<div class="rp-box rp-tbl"><h3>📋 سجل التسميع <span>${recs.length} تسميع${sm ? ' — ' + sm : ''}</span></h3>
     <table class="oneln"><tr>${H('date', 'اليوم')}${H('type', 'النوع')}${hasQ ? H('reading', 'القراءة') : ''}${H('range', 'السورة والآيات')}${H('ayahs', 'آيات')}${H('juz', 'الجزء')}${hasG ? H('grade', 'التقدير') : ''}</tr>
-    ${rows.map(r => { const d = parse(r.date), en = r.enrollmentId ? enrById(r.enrollmentId) : null; return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em>${r.redo ? ' <small>↺</small>' : ''}</td>${hasQ ? `<td>${en ? esc(en.label) : ''}</td>` : ''}
+    ${rows.map(r => { const d = parse(r.date), en = r.enrollmentId ? enrById(r.enrollmentId) : null; return `<tr><td>${fmtDMY(d)}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em>${r.redo ? ' <small>↺</small>' : ''}</td>${hasQ ? `<td>${en ? esc(en.label) : ''}</td>` : ''}
       <td style="text-align:start"><b>${rngName(r)}</b> ${r.from}–${r.to}</td><td>${ayahs(r)}</td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td>${r.type === 'qiraa' ? '' : (r.grade || '—')}</td>` : ''}</tr>`; }).join('')}</table></div>`;
 }
 function viewReport() {
