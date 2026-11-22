@@ -395,3 +395,8 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 
 .rt2 .mo{display:none}.rt2 .bi{font-size:15px}
 @media (max-width:640px){.rt2 .bt{display:none}.rt2 .mo{display:inline;white-space:nowrap}.rt2 .badge{padding:3px 7px}.ib{width:30px;height:30px;margin-inline-start:2px;font-size:14px}.rt2 td small{white-space:nowrap}}
+
+.sh{cursor:pointer;user-select:none}.sh:hover{background:#d4eadf!important}.sa{display:inline-block;min-width:10px;margin-inline-start:3px;font-size:9px;color:var(--g2)}
+.rt2 td,.rt2 th{white-space:nowrap}.rt2 tr.hl td{background:#fff8dc}
+.oneln td,.oneln th{white-space:nowrap}.rp-tbl .oneln td:nth-child(n){text-align:center}
+@media (max-width:640px){.rt2 .hm{display:none}}

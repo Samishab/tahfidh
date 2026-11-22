@@ -435,8 +435,8 @@ ${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-sel
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
   </div>
-  ${st.fixed && f.sid && !f.id ? (() => { const rc = db.records.filter(r => r.studentId === +f.sid).sort(recSort).slice(0, 5);
-    return rc.length ? `<div class="card"><h3>🕘 آخر تسميعاته</h3>${recTable(rc, { filter: false })}</div>` : ''; })() : ''}`;
+  ${st.fixed && f.sid && !f.id ? (() => { const mine = db.records.filter(r => r.studentId === +f.sid), top5 = mine.slice().sort(recSort).slice(0, 5), newest = mine.slice().sort((x, y) => y.id - x.id)[0], rc = newest && !top5.some(r => r.id === newest.id) ? top5.concat(newest) : top5;
+    return rc.length ? `<div class="card"><h3>🕘 آخر تسميعاته</h3>${recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id })}</div>` : ''; })() : ''}`;
 }
 function checkForm() {
   const f = st.form, s = +f.surah, s2 = +(f.surahTo || f.surah), a = +f.from, b = +f.to;
@@ -482,8 +482,10 @@ async function saveRec() {
   let done = false;
   if (r.enrollment) { const old = enrById(r.enrollment.id); done = r.enrollment.status === 'completed' && (!old || old.status !== 'completed'); db.enrollments = db.enrollments.filter(e => e.id !== r.enrollment.id); db.enrollments.push(r.enrollment); }
   const was = f.id, sid = f.sid, type = f.type, date = f.date, enr = f.enr;
-  setLD(date === today() ? '' : date);
-  st.form = newForm(sid, type, enr, date);
+  const adv = ymd(addDays(parse(date), 1)), nd = !was && adv <= today() ? adv : date;   // اليوم التالي بعد كل تسجيل جديد
+  setLD(nd === today() ? '' : nd);
+  st.form = newForm(sid, type, enr, nd);
+  if (was && st.editBack) { const b = st.editBack; st.editBack = null; toast('تم تعديل التسميع ✔'); go(b); return; }
   toast(done ? '🎉 أتمّ الختمة كاملة! أصدر له شهادة من ملفه' : was ? 'تم تعديل التسميع ✔' : 'تم حفظ التسميع ✔'); render();
 }
 
@@ -588,20 +590,33 @@ function viewStudent() {
     : recTable(recs, { limit: 80 })}</div>`;
 }
 const recSort = (x, y) => y.date.localeCompare(x.date) || y.id - x.id;
+const SORT_VAL = {
+  type: r => ({ hifz: 0, review: 1, qiraa: 2 }[r.type]), who: r => (student(r.studentId) || {}).name || '', range: r => absIdx(r.surah, r.from), ayahs: r => ayahs(r),
+  date: r => r.date, juz: r => Q.juz(r.surah, r.from, r.to, rEnd(r))[0] || 0, grade: r => GP[r.grade] || 0, note: r => r.note || '', reading: r => (enrById(r.enrollmentId) || {}).label || ''
+};
+/* ترتيب أي جدول تسميع: الافتراضي من الأقدم (أعلى) إلى الأحدث (أسفل) */
+function sortRecs(rows, ss) {
+  const k = (ss && ss.k) || 'date', d = (ss && ss.d) || 1, f = SORT_VAL[k] || SORT_VAL.date;
+  return rows.slice().sort((a, b) => { const x = f(a), y = f(b); let c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'ar'); if (!c) c = a.date.localeCompare(b.date) || a.id - b.id; return c * d; });
+}
+const nextSort = (ss, k) => ss && ss.k === k ? { k, d: -ss.d } : { k, d: 1 };
+const sortHead = (act, key, label, ss, extra = '', style = '') => { const on = ((ss && ss.k) || 'date') === key, dir = (ss && ss.d) || 1; return `<th class="sh ${extra}" ${style ? `style="${style}"` : ''} data-act="${act}" data-id="${key}" title="اضغط للترتيب">${label}<span class="sa noprint">${on ? (dir > 0 ? '▲' : '▼') : ''}</span></th>`; };
 const gradeBadge = r => r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '<span class="hint">—</span>';
 function recTable(recs, o = {}) {
-  const f = st.rf || 'all', all = recs.slice().sort(recSort), rows = all.filter(r => f === 'all' || r.type === f).slice(0, o.limit || 60);
+  const f = st.rf || 'all', ss = st.rs || { k: 'date', d: 1 };
+  const filtered = recs.filter(r => f === 'all' || r.type === f).sort(recSort), cut = o.noTrim ? filtered : filtered.slice(0, o.limit || 60), rows = sortRecs(cut, ss);
   const seg = o.filter === false ? '' : `<div class="seg" style="margin-bottom:10px">${[['all', 'الكل'], ['hifz', '📖 حفظ'], ['review', '🔁 مراجعة']].concat(recs.some(r => r.type === 'qiraa') ? [['qiraa', '📚 قراءة']] : []).map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="rfilter" data-id="${k}">${l}</button>`).join('')}</div>`;
   if (!rows.length) return seg + empty('📖', 'لا يوجد تسميع مسجل');
-  const sf = staff();
-  return seg + `<div class="tw"><table class="rt rt2"><tr><th>النوع</th>${o.who ? '<th>الطالب</th>' : ''}<th style="text-align:start">السورة والآيات</th><th class="hm">آيات</th><th>التاريخ</th><th class="hm">الجزء</th><th class="hm">التقدير</th><th class="hm" style="text-align:start">ملاحظة</th><th></th></tr>
-    ${rows.map(r => { const d = parse(r.date), s = student(r.studentId);
-      return `<tr><td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}"><span class="bi">${{ hifz: '📖', review: '🔁', qiraa: '📚' }[r.type]}</span><span class="bt"> ${typeAr(r)}</span></span>${r.redo ? ' <small title="إعادة">↺</small>' : ''}${enrTag(r) ? '<div class="hm">' + enrTag(r) + '</div>' : ''}</td>
-      ${o.who ? `<td>${s ? esc(s.name) : ''}</td>` : ''}
+  const sf = staff(), hasQ = rows.some(r => r.type === 'qiraa' && r.enrollmentId), hasG = rows.some(r => r.type !== 'qiraa' && r.grade);
+  const H = (k, l, ex = '', st2 = '') => sortHead('rsort', k, l, ss, ex, st2);
+  return seg + `<div class="tw"><table class="rt rt2"><tr>${H('type', 'النوع')}${o.who ? H('who', 'الطالب') : ''}${hasQ ? H('reading', 'القراءة', 'hm') : ''}${H('range', 'السورة والآيات', '', 'text-align:start')}${H('ayahs', 'آيات', 'hm')}${H('date', 'التاريخ')}${H('juz', 'الجزء', 'hm')}${hasG ? H('grade', 'التقدير', 'hm') : ''}${H('note', 'ملاحظة', 'hm', 'text-align:start')}<th></th></tr>
+    ${rows.map(r => { const d = parse(r.date), s = student(r.studentId), en = r.enrollmentId ? enrById(r.enrollmentId) : null;
+      return `<tr class="${o.hl === r.id ? 'hl' : ''}"><td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}"><span class="bi">${{ hifz: '📖', review: '🔁', qiraa: '📚' }[r.type]}</span><span class="bt"> ${typeAr(r)}</span></span>${r.redo ? ' <small title="إعادة">↺</small>' : ''}</td>
+      ${o.who ? `<td>${s ? esc(s.name) : ''}</td>` : ''}${hasQ ? `<td class="hm">${en ? esc(en.label) : ''}</td>` : ''}
       <td style="text-align:start"><b>${rngName(r)}</b> <small>${r.from}–${r.to}</small><small class="mo"> • ${ayahs(r)} آية</small></td><td class="hm">${ayahs(r)}</td>
-      <td><b>${fmtDay(d)}</b> <small>${fmtS(d)}</small></td><td class="hm">${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td class="hm">${r.type === 'qiraa' ? '<span class="hint">—</span>' : gradeBadge(r)}</td>
+      <td><b>${fmtDay(d)}</b> <small>${fmtS(d)}</small></td><td class="hm">${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td class="hm">${r.type === 'qiraa' ? '<span class="hint">—</span>' : gradeBadge(r)}</td>` : ''}
       <td class="hm nt" style="text-align:start" title="${esc(r.note)}">${r.note ? esc(r.note) : ''}</td>
-      <td class="ra"><button class="ib" data-act="rec-view" data-id="${r.id}" title="عرض">👁</button>${sf ? `<button class="ib" data-act="edit-rec" data-id="${r.id}" title="تعديل">✏️</button><button class="ib" data-act="del-rec" data-id="${r.id}" title="حذف">🗑</button>` : `<button class="ib" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم">💬</button>`}</td></tr>`; }).join('')}</table></div>${all.length > rows.length && f === 'all' ? `<p class="hint" style="text-align:center">يعرض آخر ${rows.length} من ${all.length} تسميع</p>` : ''}`;
+      <td class="ra"><button class="ib" data-act="rec-view" data-id="${r.id}" title="عرض">👁</button>${sf ? `<button class="ib" data-act="edit-rec" data-id="${r.id}" title="تعديل">✏️</button><button class="ib" data-act="del-rec" data-id="${r.id}" title="حذف">🗑</button>` : `<button class="ib" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم">💬</button>`}</td></tr>`; }).join('')}</table></div>${filtered.length > cut.length && f === 'all' ? `<p class="hint" style="text-align:center">يعرض آخر ${cut.length} من ${filtered.length} تسميع</p>` : ''}`;
 }
 function weekReport(s) {
   const ws = weekStart(new Date()), a = ymd(ws), b = ymd(addDays(ws, 6));
@@ -903,9 +918,11 @@ const acts = {
     f.surahTo = f.surah; f.to = id === 'end' ? mx : Math.min(+f.from + +id - 1, mx); render();
   },
   'save-rec': saveRec,
-  'cancel-edit': () => { st.form = newForm(''); go('home'); },
+  'cancel-edit': () => { const b = st.editBack; st.editBack = null; st.form = newForm(''); go(b || 'home'); },
+  rsort: id => { st.rs = nextSort(st.rs || { k: 'date', d: 1 }, id); render(); },
+  ssort: id => { st.ss = nextSort(st.ss || { k: 'date', d: 1 }, id); render(); },
   'rec-view': id => { const r = db.records.find(x => x.id === +id); if (r) modal(`<h2>📋 تفاصيل التسميع</h2><div class="recbig">${recCard(r)}</div><button class="btn light block" style="margin-top:10px" data-act="close">إغلاق</button>`); },
-  'edit-rec': id => { closeModal(); const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, surahTo: rEnd(r), from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
+  'edit-rec': id => { closeModal(); if (st.view !== 'add') st.editBack = st.view; const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, surahTo: rEnd(r), from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
   'del-rec': async id => { if (!confirm('حذف هذا التسميع؟')) return; closeModal(); await api('record_delete', { id: +id }); db.records = db.records.filter(r => r.id !== +id); render(); toast('تم الحذف'); },
   quick: id => { st.form = newForm(id); st.fixed = true; go('add'); },
   'open-student': id => { st.fixed = false; go('student', { sid: +id, pe: null }); },
