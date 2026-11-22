@@ -421,7 +421,7 @@ function viewAdd() {
         <div style="flex:1;min-width:0"><b style="font-size:17px">${esc(so.name)}</b><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curLine(so))}</div></div>
         <button type="button" class="btn light sm" data-act="open-student" data-id="${f.sid}" title="ملف الطالب">📂</button></div>`
       : `<select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(x => `<option value="${x.id}" ${+f.sid === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}
-    ${f.date !== today() ? `<div class="info sm" style="text-align:start">📅 تسجّل بتاريخ <b>${fmtDay(parse(f.date))} ${fmtS(parse(f.date))}</b> <button type="button" class="btn light sm" data-act="date-today">↩ العودة إلى اليوم</button></div>` : ''}
+    <div id="datebanner">${dateBanner(f)}</div>
     <div class="cmp">${progSel}<input type="date" data-f="date" value="${f.date}" max="${today()}" style="${progSel ? 'width:150px;flex:none' : 'flex:1'}"><span id="dayname" hidden></span></div>
     ${!f.enr ? `<div class="seg gold sm"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>` : ''}
     <div class="cmp"><b>من</b><select data-f="surah">${SURAHS.map((x, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>`).join('')}</select>
@@ -437,9 +437,11 @@ ${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-sel
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
   </div>
-  ${st.fixed && f.sid && !f.id ? (() => { const mine = db.records.filter(r => r.studentId === +f.sid), ym = String(f.date).slice(0, 7), inM = mine.filter(r => r.date.slice(0, 7) === ym), base = inM.length ? inM : mine.slice().sort(recSort).slice(0, 5), newest = mine.slice().sort((x, y) => y.id - x.id)[0], rc = newest && !base.some(r => r.id === newest.id) ? base.concat(newest) : base, mname = parse(f.date).toLocaleDateString(L, { month: 'long', year: 'numeric' });
-    return rc.length ? `<div class="card"><h3>🕘 ${inM.length ? `تسميعات ${mname} (${inM.length})` : 'آخر تسميعاته'}</h3>${newest && !base.some(r => r.id === newest.id) ? '<p class="hint" style="margin:0 0 6px">الصف الأصفر: آخر ما أدخلته (تاريخه خارج هذا الشهر)</p>' : ''}${recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id })}</div>` : ''; })() : ''}`;
+  <div id="reclist">${recListHtml(f)}</div>`;
 }
+const dateBanner = f => f.date && f.date !== today() ? `<div class="info sm" style="text-align:start">📅 تسجّل بتاريخ <b>${fmtDMY(parse(f.date))}</b> <button type="button" class="btn light sm" data-act="date-today">↩ العودة إلى اليوم</button></div>` : '';
+const recListHtml = f => f.date && st.fixed && f.sid && !f.id ? (() => { const mine = db.records.filter(r => r.studentId === +f.sid), ym = String(f.date).slice(0, 7), inM = mine.filter(r => r.date.slice(0, 7) === ym), base = inM.length ? inM : mine.slice().sort(recSort).slice(0, 5), newest = mine.slice().sort((x, y) => y.id - x.id)[0], rc = newest && !base.some(r => r.id === newest.id) ? base.concat(newest) : base, mname = parse(f.date).toLocaleDateString(L, { month: 'long', year: 'numeric' });
+    return rc.length ? `<div class="card"><h3>🕘 ${inM.length ? `تسميعات ${mname} (${inM.length})` : 'آخر تسميعاته'}</h3>${newest && !base.some(r => r.id === newest.id) ? '<p class="hint" style="margin:0 0 6px">الصف الأصفر: آخر ما أدخلته (تاريخه خارج هذا الشهر)</p>' : ''}${recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id })}</div>` : ''; })() : '';
 function checkForm() {
   const f = st.form, s = +f.surah, s2 = +(f.surahTo || f.surah), a = +f.from, b = +f.to;
   if (!f.from || !f.to) return { ok: false, msg: `أدخل رقم الآية — سورة ${Q.name(s)} فيها ${Q.count(s)} آية` };
@@ -1043,7 +1045,11 @@ document.addEventListener('input', e => {
   if (!t.dataset.f || !st.form) return;
   st.form[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;
   if (t.dataset.f === 'redo') return;
-  if (t.dataset.f === 'date') { setLD(t.value && t.value !== today() ? t.value : ''); render(); return; }
+  if (t.dataset.f === 'date') {
+    setLD(t.value && t.value !== today() ? t.value : '');
+    const b = $('#datebanner'), l = $('#reclist'); if (b) b.innerHTML = dateBanner(st.form); if (l) l.innerHTML = recListHtml(st.form);   // بلا إعادة بناء الحقل حتى لا يضيع المؤشر أثناء الكتابة
+    return;
+  }
   if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value, 'hifz', null, st.form.date); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, surahTo: nf.surahTo, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
   if (t.dataset.f === 'enr') { st.form.type = t.value ? 'qiraa' : 'hifz'; if (t.value) { st.form.grade = ''; st.form.redo = false; } if (!st.form.id) Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value, st.form.date)); render(); return; }
   if (t.dataset.f === 'surah') { st.form.surahTo = st.form.surah; st.form.from = 1; st.form.to = ''; st.form.hint = ''; render(); return; }
