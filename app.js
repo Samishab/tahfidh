@@ -92,11 +92,13 @@ function curLine(s) {
   const e = currentEnr(s.id), l = lastOf(s.id, e ? 'qiraa' : 'hifz', e), en = e ? enrById(e) : null;
   return `${en ? '📚 ' + en.label : (s.program === 'qiraat' ? '📚 قراءات' : '📖 حفظ ومراجعة')}${l ? ' • وصل: ' + Q.name(rEnd(l)) + ' آية ' + l.to : ''}`;
 }
+const getLD = () => { try { const v = sessionStorage.getItem('tahfidh_ld') || ''; return v && v <= today() ? v : ''; } catch { return ''; } };
+const setLD = v => { try { v ? sessionStorage.setItem('tahfidh_ld', v) : sessionStorage.removeItem('tahfidh_ld'); } catch { } };
 const newForm = (sid, type = 'hifz', enr = null, date = '') => {
   const s = student(sid);
   if (enr === null) enr = s ? currentEnr(s.id) : '';
   if (enr) type = 'qiraa';
-  date = date || today();
+  date = date || getLD() || today();
   return { id: null, sid: sid || '', type, enr: enr ? String(enr) : '', date, grade: '', note: '', redo: false, ...nextPos(sid, type, enr, date) };
 };
 // خريطة الحفظ: enr فارغ = حفظ المصحف، وإلا ختمة القراءة المحددة. raw = تجاهل علامة «حافظ» اليدوية
@@ -145,7 +147,7 @@ const closeModal = () => { $('#modal').hidden = true; $('#modal').innerHTML = ''
 const logoImg = (c = 'logo') => `<img class="${c}" src="${esc(brand().logo) || 'icon.svg'}" alt="شعار">`;
 const initial = n => esc([...String(n).trim()][0] || '؟');
 /* حفظ مكان المستخدم داخل التطبيق ليبقى فيه عند تحديث الصفحة (لكل الحسابات) */
-const NAV_KEYS = ['view', 'sid', 'thread', 'mt', 'ro', 'mo', 'sp', 'sfrom', 'sto', 'mode', 'off', 'cid', 'mschool'];
+const NAV_KEYS = ['form', 'fixed', 'view', 'sid', 'thread', 'mt', 'ro', 'mo', 'sp', 'sfrom', 'sto', 'mode', 'off', 'cid', 'mschool'];
 function saveNav() {
   try { if (!db.me || ['verify', 'signup', 'feedback'].includes(st.view)) return; const o = { uid: db.me.id }; NAV_KEYS.forEach(k => { o[k] = st[k]; }); sessionStorage.setItem('tahfidh_nav', JSON.stringify(o)); } catch { }
 }
@@ -238,6 +240,7 @@ function renderFeedback() {
       : `${feedbackForm()}<button type="button" class="btn light block" style="margin-top:8px" data-act="to-login">رجوع</button>`}</div>
     ${waqfLine()}</div>`;
 }
+const ICON_EXIT = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/></svg>';
 const waqfTop = () => { const b = platformBrand(); return `<div class="waqf-top"><button type="button" class="lnk" data-act="about">منصة ${esc(b.name)}</button>${b.waqf ? ' <span class="sep">•</span> ' + esc(b.waqf) : ''}</div>`; };
 const waqfLine = () => { const w = platformBrand().waqf; return w ? `<div class="waqf">${esc(w)}</div>` : ''; };
 /* ---- صفحة «عن المنصة» + نموذج التواصل (عامة، تظهر قبل الدخول وبعده) ---- */
@@ -301,7 +304,7 @@ function renderForce() {
       <button class="btn block gold">حفظ ومتابعة</button><button type="button" class="btn ghost block" data-act="skip-force">لاحقاً — سأغيّرها من «حسابي»</button><button type="button" class="btn light block sm" data-act="logout">تسجيل الخروج</button>
     </form></div></div>`;
 }
-async function logout() { try { await api('logout', {}); } catch { } try { sessionStorage.removeItem('tahfidh_nav'); } catch { } db = blank(); st.otp = null; st.view = 'home'; st.thread = null; st.form = null; st.skipForce = false; render(); }
+async function logout() { try { await api('logout', {}); } catch { } try { sessionStorage.removeItem('tahfidh_nav'); sessionStorage.removeItem('tahfidh_ld'); } catch { } db = blank(); st.otp = null; st.view = 'home'; st.thread = null; st.form = null; st.skipForce = false; render(); }
 
 /* ---------- الإطار ---------- */
 const TITLES = {
@@ -329,7 +332,7 @@ function shell(body) {
     ${waqfTop()}
     <div class="hdr-row">${logoImg()}<div class="grow"><h1>${esc(brand().name)}</h1><small>${esc(db.me.name)} • ${roleLabel(db.me)}</small></div>
       <button class="hbtn" data-act="nav" data-id="search" title="بحث">🔍</button>
-      <button class="hbtn" data-act="logout" title="تسجيل الخروج">🚪</button>
+      <button class="hbtn xbtn" data-act="logout" title="تسجيل الخروج" aria-label="تسجيل الخروج">${ICON_EXIT}<span>خروج</span></button>
       <div style="text-align:end;font-size:12.5px;line-height:1.4"><b>${fmtDay(d)}</b><br>${fmtG(d)}<br>${fmtH(d)}</div></div>
     <div class="pagetitle">${t}${sub ? `<small>${sub}</small>` : ''}</div>
     ${isAdmin() && db.schools.length > 1 ? `<select id="fschool" class="fsel" title="تصفية بحسب المدرسة"><option value="">🏫 كل المدارس</option>${db.schools.map(x => `<option value="${x.id}" ${+st.fs === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}
@@ -384,7 +387,7 @@ function viewHome() {
   </div>
   ${absent.length ? `<div class="card"><h3>⏳ لم يسمّعوا اليوم (${absent.length})</h3><div class="chips">${absent.map(s => `<button class="chip" data-act="quick" data-id="${s.id}">${esc(s.name)}</button>`).join('')}</div><p class="hint">اضغط على الاسم لتسجيل تسميعه</p></div>` : ''}`}
   <div class="card"><h3>📋 تسميع اليوم</h3>
-    ${tod.length ? `<div class="list">${tod.map(r => recCard(r)).join('')}</div>` : empty('📖', 'لا يوجد تسميع اليوم')}
+    ${tod.length ? recTable(tod, { who: true, filter: false }) : empty('📖', 'لا يوجد تسميع اليوم')}
   </div>`;
 }
 
@@ -408,7 +411,7 @@ function viewAdd() {
   if (!db.students.length) return `<div class="card">${empty('👥', 'لا يوجد طلاب لتسجيل التسميع')}</div>`;
   const so = student(f.sid), ac = so ? activeEnr(so.id) : [], s2 = +(f.surahTo || f.surah);
   const progSel = so && (ac.length || so.program === 'qiraat')
-    ? `<select data-f="enr" title="البرنامج">${so.program !== 'qiraat' ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>` : '';
+    ? `<select data-f="enr" title="البرنامج">${so.program !== 'qiraat' || so.allowHr ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>` : '';
   return `
   <div class="card tight">
     ${st.fixed && f.sid && so ? `<div class="cmp"><button type="button" class="btn light sm" data-act="nav" data-id="students" title="الطلاب">→</button>
@@ -416,6 +419,7 @@ function viewAdd() {
         <div style="flex:1;min-width:0"><b style="font-size:17px">${esc(so.name)}</b><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curLine(so))}</div></div>
         <button type="button" class="btn light sm" data-act="open-student" data-id="${f.sid}" title="ملف الطالب">📂</button></div>`
       : `<select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(x => `<option value="${x.id}" ${+f.sid === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}
+    ${f.date !== today() ? `<div class="info sm" style="text-align:start">📅 تسجّل بتاريخ <b>${fmtDay(parse(f.date))} ${fmtS(parse(f.date))}</b> <button type="button" class="btn light sm" data-act="date-today">↩ العودة إلى اليوم</button></div>` : ''}
     <div class="cmp">${progSel}<input type="date" data-f="date" value="${f.date}" max="${today()}" style="${progSel ? 'width:150px;flex:none' : 'flex:1'}"><span id="dayname" hidden></span></div>
     ${!f.enr ? `<div class="seg gold sm"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>` : ''}
     <div class="cmp"><b>من</b><select data-f="surah">${SURAHS.map((x, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>`).join('')}</select>
@@ -431,8 +435,8 @@ ${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-sel
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
   </div>
-  ${st.fixed && f.sid && !f.id ? (() => { const rc = db.records.filter(r => r.studentId === +f.sid).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0'))).slice(0, 3);
-    return rc.length ? `<div class="card"><h3>🕘 آخر تسميعاته</h3><div class="list">${rc.map(r => recCard(r, { noName: true })).join('')}</div></div>` : ''; })() : ''}`;
+  ${st.fixed && f.sid && !f.id ? (() => { const rc = db.records.filter(r => r.studentId === +f.sid).sort(recSort).slice(0, 5);
+    return rc.length ? `<div class="card"><h3>🕘 آخر تسميعاته</h3>${recTable(rc, { filter: false })}</div>` : ''; })() : ''}`;
 }
 function checkForm() {
   const f = st.form, s = +f.surah, s2 = +(f.surahTo || f.surah), a = +f.from, b = +f.to;
@@ -449,16 +453,36 @@ function updateInfo() {
   const c = checkForm(); i.textContent = c.msg; i.classList.toggle('err', !c.ok && !!(st.form.from || st.form.to));
   const dn = $('#dayname'); if (dn && st.form.date) { const d = parse(st.form.date); dn.textContent = `${fmtDay(d)} • ${fmtG(d)} • ${fmtH(d)}`; }
 }
+const absIdx = (s, a) => { let n = 0; for (let i = 1; i < s; i++) n += Q.count(i); return n + a; };
+function overlapsFor(f) {
+  const A0 = absIdx(+f.surah, +f.from), B0 = absIdx(+(f.surahTo || f.surah), +f.to);
+  return db.records.filter(r => r.studentId === +f.sid && r.id !== f.id && r.type === f.type && String(r.enrollmentId || '') === String(f.enr || '') && (f.type !== 'review' || r.date === f.date))
+    .filter(r => absIdx(r.surah, r.from) <= B0 && absIdx(rEnd(r), r.to) >= A0).sort((x, y) => y.date.localeCompare(x.date));
+}
+function overlapModal(ov) {
+  modal(`<h2>⚠ آيات سُمِّعت من قبل</h2>
+  <p class="hint" style="margin-top:0">هذا التسميع يتداخل مع تسميع مسجّل سابقاً، ولن يُحفظ إلا بعد التأكيد:</p>
+  <div class="list" style="margin-bottom:12px">${ov.slice(0, 4).map(r => { const d = parse(r.date); return `<div class="item" style="cursor:default"><div class="t"><b>${recText(r)}</b><small>${typeAr(r)} • ${fmtDay(d)} ${fmtS(d)}${r.note ? ' • ' + esc(r.note.slice(0, 30)) : ''}</small></div></div>`; }).join('')}${ov.length > 4 ? `<p class="hint">+ ${ov.length - 4} تسميعات أخرى</p>` : ''}</div>
+  <form id="ovform" class="gap">
+    <label class="row" style="gap:8px;font-weight:700"><input type="checkbox" name="ok" required style="width:auto;flex:none"> أؤكد أن هذا تسميع مكرر وأريد حفظه</label>
+    <div><label class="f">السبب</label><select name="why"><option>إعادة</option><option>تصحيح خطأ</option><option>إدخال تسميع قديم</option><option value="">سبب آخر</option></select></div>
+    <input name="why2" maxlength="120" placeholder="تفاصيل السبب (اختياري)">
+    <button class="btn gold block">حفظ رغم التكرار</button><button type="button" class="btn light block" data-act="close">رجوع للتعديل</button>
+  </form>`);
+}
 async function saveRec() {
   const f = st.form, c = checkForm();
   if (!f.sid) return toast('اختر الطالب أولاً');
   if (!f.date) return toast('اختر التاريخ');
   if (!c.ok) return toast(c.msg);
-  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, surahTo: +(f.surahTo || f.surah), to: +f.to, grade: f.enr ? '' : f.grade, note: f.note.trim(), redo: !f.enr && !!f.redo });
+  const od = f.id ? db.records.find(x => x.id === f.id) : null, same = od && od.date === f.date && od.type === f.type && od.surah === +f.surah && od.from === +f.from && rEnd(od) === +(f.surahTo || f.surah) && od.to === +f.to;
+  if (!f.redo && !same) { const ov = overlapsFor(f); if (ov.length) return overlapModal(ov); }
+  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, surahTo: +(f.surahTo || f.surah), to: +f.to, grade: f.enr ? '' : f.grade, note: ((f.why ? `[${f.why}] ` : '') + f.note.trim()).trim(), redo: !!f.redo });
   db.records = db.records.filter(x => x.id !== r.record.id); db.records.push(r.record);
   let done = false;
   if (r.enrollment) { const old = enrById(r.enrollment.id); done = r.enrollment.status === 'completed' && (!old || old.status !== 'completed'); db.enrollments = db.enrollments.filter(e => e.id !== r.enrollment.id); db.enrollments.push(r.enrollment); }
   const was = f.id, sid = f.sid, type = f.type, date = f.date, enr = f.enr;
+  setLD(date === today() ? '' : date);
   st.form = newForm(sid, type, enr, date);
   toast(done ? '🎉 أتمّ الختمة كاملة! أصدر له شهادة من ملفه' : was ? 'تم تعديل التسميع ✔' : 'تم حفظ التسميع ✔'); render();
 }
@@ -495,6 +519,7 @@ function studentForm(s) {
     ${isAdmin() ? `<div><label class="f">المدرسة</label><select name="school" id="st_school">${db.schools.map(x => `<option value="${x.id}" ${x.id === sch ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="school" id="st_school" value="${sch}">`}
     <div><label class="f">المعلمون <span class="hint">(يمكن اختيار أكثر من معلم للطالب)</span></label><div class="checks" id="st_teachers">${teacherChecks(sch, s ? (s.teachers || []) : (db.me.solo ? [db.me.id] : []))}</div></div>
     <div><label class="f">البرنامج</label><select name="program" id="st_program"><option value="hifz" ${(s?.program || 'hifz') === 'hifz' ? 'selected' : ''}>📖 حفظ ومراجعة</option>${qiraatAny() || s?.program === 'qiraat' ? `<option value="qiraat" ${s?.program === 'qiraat' ? 'selected' : ''}>📚 قراءات (للحافظين فقط)</option>` : ''}</select></div>
+    <label class="row" id="st_hr_row" style="gap:8px;font-size:14px" ${s?.program === 'qiraat' ? '' : 'hidden'}><input type="checkbox" name="allow_hr" style="width:auto;flex:none" ${s?.allowHr ? 'checked' : ''}> السماح بتسميع الحفظ والمراجعة لهذا الطالب <small class="hint">(مغلق افتراضياً لطالب القراءات)</small></label>
     <div style="border:1.5px solid var(--line);border-radius:14px;padding:12px;background:#fff">
       <label class="row" style="gap:8px"><input type="checkbox" name="hafiz" id="st_hafiz" style="width:auto;flex:none" ${s?.hafiz ? 'checked' : ''}> <b>أتمّ حفظ المصحف كاملاً مسبقاً</b></label>
       <div class="gap" style="margin-top:8px"><input name="hafwhere" maxlength="160" value="${esc(s?.hafizWhere)}" placeholder="أين أتمّه؟ (اختياري)"><textarea name="hafnote" maxlength="300" placeholder="ملاحظات (اختياري)">${esc(s?.hafizNote)}</textarea></div></div>
@@ -518,7 +543,7 @@ function studentForm(s) {
 }
 function viewStudent() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
-  const act = activeEnr(s.id), tabs = (s.program !== 'qiraat' ? [{ k: '', l: '📖 حفظ ومراجعة' }] : []).concat(act.map(e => ({ k: String(e.id), l: '📚 ' + e.label })));
+  const act = activeEnr(s.id), tabs = (s.program !== 'qiraat' || s.allowHr ? [{ k: '', l: '📖 حفظ ومراجعة' }] : []).concat(act.map(e => ({ k: String(e.id), l: '📚 ' + e.label })));
   const want = st.pe == null ? String(currentEnr(s.id)) : String(st.pe);
   const cur = tabs.some(x => x.k === want) ? want : (tabs[0] ? tabs[0].k : '');
   const m = memorized(s.id, cur), total = m.reduce((x, y) => x + y, 0), { w } = progressCard(s);
@@ -559,18 +584,24 @@ function viewStudent() {
     ${doneEnr.map(e => `<div class="info" style="margin-bottom:10px;text-align:start">🎉 أتمّ ${esc(e.label)} <button class="btn gold sm" style="margin-top:6px" data-act="cert-enr" data-id="${e.id}" data-sid="${s.id}">إصدار شهادة</button></div>`).join('')}
     ${cs.length ? `<div class="list">${cs.map(c => `<div class="item" data-act="open-cert" data-id="${c.id}"><div class="avatar">🏆</div><div class="t"><b>${esc(c.title)}</b><small>${fmtG(parse(c.date))} • ${esc(c.serial)}</small></div></div>`).join('')}</div>` : empty('🏅', 'لا توجد شهادات بعد')}</div>`; })()}
   <div class="card"><h3>🕘 جدول التسميع (${recs.length})</h3>${staff()
-    ? (recs.length ? `<div class="list">${recs.slice(0, 40).map(r => recCard(r, { noName: true })).join('')}</div>` : empty('📖', 'لا يوجد تسميع مسجل'))
-    : recTable(recs)}</div>`;
+    ? recTable(recs, { limit: 80 })
+    : recTable(recs, { limit: 80 })}</div>`;
 }
-function recTable(recs) {
-  const f = st.rf || 'all', rows = recs.filter(r => f === 'all' || r.type === f);
-  const seg = [['all', 'الكل'], ['hifz', '📖 حفظ'], ['review', '🔁 مراجعة']].concat(recs.some(r => r.type === 'qiraa') ? [['qiraa', '📚 قراءة']] : []).map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="rfilter" data-id="${k}">${l}</button>`).join('');
-  return `<div class="seg" style="margin-bottom:10px">${seg}</div>` + (rows.length ? `<div class="tw"><table class="rt"><tr><th>التاريخ</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th><th></th></tr>
-    ${rows.map(r => { const d = parse(r.date); return `<tr><td><b>${fmtDay(d)}</b><br><small>${fmtS(d)}</small></td>
-      <td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}">${typeAr(r)}</span></td>
-      <td style="text-align:start"><b>${rngName(r)}</b><br><small>${r.from}–${r.to} (${ayahs(r)} آية)</small>${enrTag(r) ? '<br>' + enrTag(r) : ''}${r.note ? `<br><small>📝 ${esc(r.note)}</small>` : ''}</td>
-      <td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td>${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '—'}</td>
-      <td><button class="btn light sm" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم عن هذا التسميع">💬</button></td></tr>`; }).join('')}</table></div>` : empty('📖', 'لا يوجد تسميع مسجل'));
+const recSort = (x, y) => y.date.localeCompare(x.date) || y.id - x.id;
+const gradeBadge = r => r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : '<span class="hint">—</span>';
+function recTable(recs, o = {}) {
+  const f = st.rf || 'all', all = recs.slice().sort(recSort), rows = all.filter(r => f === 'all' || r.type === f).slice(0, o.limit || 60);
+  const seg = o.filter === false ? '' : `<div class="seg" style="margin-bottom:10px">${[['all', 'الكل'], ['hifz', '📖 حفظ'], ['review', '🔁 مراجعة']].concat(recs.some(r => r.type === 'qiraa') ? [['qiraa', '📚 قراءة']] : []).map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="rfilter" data-id="${k}">${l}</button>`).join('')}</div>`;
+  if (!rows.length) return seg + empty('📖', 'لا يوجد تسميع مسجل');
+  const sf = staff();
+  return seg + `<div class="tw"><table class="rt rt2"><tr><th>النوع</th>${o.who ? '<th>الطالب</th>' : ''}<th style="text-align:start">السورة والآيات</th><th class="hm">آيات</th><th>التاريخ</th><th class="hm">الجزء</th><th class="hm">التقدير</th><th class="hm" style="text-align:start">ملاحظة</th><th></th></tr>
+    ${rows.map(r => { const d = parse(r.date), s = student(r.studentId);
+      return `<tr><td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}"><span class="bi">${{ hifz: '📖', review: '🔁', qiraa: '📚' }[r.type]}</span><span class="bt"> ${typeAr(r)}</span></span>${r.redo ? ' <small title="إعادة">↺</small>' : ''}${enrTag(r) ? '<div class="hm">' + enrTag(r) + '</div>' : ''}</td>
+      ${o.who ? `<td>${s ? esc(s.name) : ''}</td>` : ''}
+      <td style="text-align:start"><b>${rngName(r)}</b> <small>${r.from}–${r.to}</small><small class="mo"> • ${ayahs(r)} آية</small></td><td class="hm">${ayahs(r)}</td>
+      <td><b>${fmtDay(d)}</b> <small>${fmtS(d)}</small></td><td class="hm">${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td class="hm">${r.type === 'qiraa' ? '<span class="hint">—</span>' : gradeBadge(r)}</td>
+      <td class="hm nt" style="text-align:start" title="${esc(r.note)}">${r.note ? esc(r.note) : ''}</td>
+      <td class="ra"><button class="ib" data-act="rec-view" data-id="${r.id}" title="عرض">👁</button>${sf ? `<button class="ib" data-act="edit-rec" data-id="${r.id}" title="تعديل">✏️</button><button class="ib" data-act="del-rec" data-id="${r.id}" title="حذف">🗑</button>` : `<button class="ib" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم">💬</button>`}</td></tr>`; }).join('')}</table></div>${all.length > rows.length && f === 'all' ? `<p class="hint" style="text-align:center">يعرض آخر ${rows.length} من ${all.length} تسميع</p>` : ''}`;
 }
 function weekReport(s) {
   const ws = weekStart(new Date()), a = ymd(ws), b = ymd(addDays(ws, 6));
@@ -873,8 +904,9 @@ const acts = {
   },
   'save-rec': saveRec,
   'cancel-edit': () => { st.form = newForm(''); go('home'); },
-  'edit-rec': id => { const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, surahTo: rEnd(r), from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
-  'del-rec': async id => { if (!confirm('حذف هذا التسميع؟')) return; await api('record_delete', { id: +id }); db.records = db.records.filter(r => r.id !== +id); render(); toast('تم الحذف'); },
+  'rec-view': id => { const r = db.records.find(x => x.id === +id); if (r) modal(`<h2>📋 تفاصيل التسميع</h2><div class="recbig">${recCard(r)}</div><button class="btn light block" style="margin-top:10px" data-act="close">إغلاق</button>`); },
+  'edit-rec': id => { closeModal(); const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, surahTo: rEnd(r), from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
+  'del-rec': async id => { if (!confirm('حذف هذا التسميع؟')) return; closeModal(); await api('record_delete', { id: +id }); db.records = db.records.filter(r => r.id !== +id); render(); toast('تم الحذف'); },
   quick: id => { st.form = newForm(id); st.fixed = true; go('add'); },
   'open-student': id => { st.fixed = false; go('student', { sid: +id, pe: null }); },
   report: id => {
@@ -916,6 +948,7 @@ const acts = {
     setTimeout(() => { const m = $('#msgin'); if (m) { m.focus(); m.setSelectionRange(m.value.length, m.value.length); } }, 60);
   },
   'open-stmt': id => go('statement', { sid: +id, sp: new Date().getDate() <= 7 ? 'last' : 'month' }),
+  'date-today': () => { st.form.date = today(); setLD(''); render(); },
   stype: id => { st.stype = id; render(); },
   sp: id => { if (id === 'custom') { const r = stmtRange(); if (r.a >= '2000') { st.sfrom = st.sfrom || r.a; st.sto = st.sto || r.b; } } st.sp = id; render(); },
   'csv-stmt': () => stmtCsv(),
@@ -990,7 +1023,7 @@ document.addEventListener('input', e => {
   if (!t.dataset.f || !st.form) return;
   st.form[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;
   if (t.dataset.f === 'redo') return;
-  if (t.dataset.f === 'date') { if (!st.form.id && st.form.sid) { Object.assign(st.form, nextPos(st.form.sid, st.form.type, st.form.enr, st.form.date)); } render(); return; }
+  if (t.dataset.f === 'date') { setLD(t.value && t.value !== today() ? t.value : ''); render(); return; }
   if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value, 'hifz', null, st.form.date); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, surahTo: nf.surahTo, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
   if (t.dataset.f === 'enr') { st.form.type = t.value ? 'qiraa' : 'hifz'; if (t.value) { st.form.grade = ''; st.form.redo = false; } if (!st.form.id) Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value, st.form.date)); render(); return; }
   if (t.dataset.f === 'surah') { st.form.surahTo = st.form.surah; st.form.from = 1; st.form.to = ''; st.form.hint = ''; render(); return; }
@@ -1081,12 +1114,15 @@ document.addEventListener('submit', run(async e => {
     await api('student_hafiz', { id: +f.dataset.sid, hafiz: f.hafiz.checked, where: f.where.value, note: f.note.value });
     Object.assign(student(f.dataset.sid), { hafiz: f.hafiz.checked, hafizWhere: f.where.value, hafizNote: f.note.value }); closeModal(); render(); toast('تم الحفظ ✔'); return;
   }
+  if (f.id === 'ovform') {
+    const w = (f.why2.value.trim() || f.why.value).trim(); closeModal(); st.form.redo = true; st.form.why = w; await saveRec(); return;
+  }
   if (f.id === 'stform') {
     const r = await api('student_save', {
       id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_ids: [...f.querySelectorAll('[name=tch]:checked')].map(x => +x.value), group: f.group.value,
       new_parents: [...f.querySelectorAll('.np_row')].map(r => ({ name: r.querySelector('[name=np_name]').value.trim(), email: r.querySelector('[name=np_email]').value.trim(), phone: r.querySelector('[name=np_phone]').value.trim() })).filter(x => x.name || x.email), program: f.program.value, hafiz: f.hafiz.checked || f.program.value === 'qiraat', hafiz_where: f.hafwhere.value, hafiz_note: f.hafnote.value,
       prior_list: [...f.querySelectorAll('[name=prk]:checked')].map(x => ({ kind: 'riwaya', riwayat: [x.value], label: RW[x.value].label })), prior_where: f.prior_where ? f.prior_where.value : '',
-      parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value, student_email: f.semail.value, student_phone: f.sphone.value
+      parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value, student_email: f.semail.value, student_phone: f.sphone.value, allow_hr: !!(f.allow_hr && f.allow_hr.checked)
     });
     await refresh(); closeModal(); render(); toast('تم الحفظ ✔');
     if (r.login) showCreds(f.name.value, r.login.username, r.login.password, '');
@@ -1118,7 +1154,7 @@ document.addEventListener('change', run(async e => {
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
   if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
   if (t.id === 'en_kind') { $('#en_riwaya').style.display = t.value === 'riwaya' ? '' : 'none'; $('#en_qiraa').style.display = t.value === 'qiraa' ? '' : 'none'; $('#en_jam').style.display = t.value === 'jam' ? '' : 'none'; }
-  if (t.id === 'st_program' && t.value === 'qiraat') $('#st_hafiz').checked = true;
+  if (t.id === 'st_program') { if (t.value === 'qiraat') $('#st_hafiz').checked = true; const hr = $('#st_hr_row'); if (hr) hr.hidden = t.value !== 'qiraat'; }
   if (t.id === 'mschool') { st.mschool = t.value; render(); }
   if (t.id === 'sfrom' || t.id === 'sto') { st[t.id] = t.value; render(); }
   if (t.id === 'smonth' && t.value) { st.sp = t.value; render(); }

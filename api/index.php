@@ -258,7 +258,7 @@ function bootstrap(array $u): array {
     [$w, $p] = scope($u);
     $fs = $u['role'] === 'admin' ? (int)($_GET['school'] ?? 0) : 0;              // فلتر مدرسة للمدير: يُطبَّق في الخادم
     if ($fs) { $w = 'school_id=?'; $p = [$fs]; }
-    $students = q("SELECT id,name,grp,riwaya,program,hafiz,hafiz_where,hafiz_note,school_id,teacher_id,user_id FROM students WHERE $w ORDER BY name", $p)->fetchAll();
+    $students = q("SELECT id,name,grp,riwaya,program,hafiz,hafiz_where,hafiz_note,allow_hr,school_id,teacher_id,user_id FROM students WHERE $w ORDER BY name", $p)->fetchAll();
     $ids = array_map(fn($s) => (int)$s['id'], $students);
     $in = $ids ? implode(',', $ids) : '0';
     $par = [];
@@ -268,7 +268,7 @@ function bootstrap(array $u): array {
     $pn = [];
     if (in_array($u['role'], ['admin', 'school_admin', 'teacher'], true))
         foreach (q("SELECT ps.student_id,x.name FROM parent_student ps JOIN users x ON x.id=ps.parent_id WHERE ps.student_id IN ($in) ORDER BY x.name")->fetchAll() as $r) $pn[(int)$r['student_id']][] = $r['name'];
-    $stOut = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'group' => $s['grp'] ?? '', 'riwaya' => $s['riwaya'] ?? 'hafs', 'program' => $s['program'] ?? 'hifz', 'hafiz' => (bool)($s['hafiz'] ?? 0),
+    $stOut = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'group' => $s['grp'] ?? '', 'riwaya' => $s['riwaya'] ?? 'hafs', 'program' => $s['program'] ?? 'hifz', 'allowHr' => !empty($s['allow_hr']), 'hafiz' => (bool)($s['hafiz'] ?? 0),
         'hafizWhere' => $s['hafiz_where'] ?? '', 'hafizNote' => $s['hafiz_note'] ?? '', 'school_id' => $s['school_id'] ? (int)$s['school_id'] : null,
         'teacher_id' => $s['teacher_id'] ? (int)$s['teacher_id'] : null, 'user_id' => $s['user_id'] ? (int)$s['user_id'] : null,
         'parents' => $par[(int)$s['id']] ?? [], 'parent_names' => $pn[(int)$s['id']] ?? [], 'teachers' => $tch[(int)$s['id']] ?? []], $students);
@@ -411,7 +411,7 @@ try {
         [$d, $type, $s, $f, $t, $g, $note, $enr, $s2] = validRecord();
         if ($type === 'qiraa') $g = '';                                        // القراءات بلا تقدير (الملاحظة اختيارية)
         $sid = (int)(body()['studentId'] ?? 0); $id = (int)(body()['id'] ?? 0);
-        $redo = !empty(body()['redo']) && $type !== 'qiraa' ? 1 : 0;           // «إعادة»: للحفظ والمراجعة فقط
+        $redo = !empty(body()['redo']) ? 1 : 0;                                // «إعادة» / تأكيد التكرار
         $stu = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
         if (!$stu || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
         if ($type === 'qiraa') {
@@ -422,12 +422,24 @@ try {
             if ($e['status'] !== 'active' && !$id) fail('هذه الختمة مكتملة');
         } else {
             $enr = 0;
-            if ($stu['program'] === 'qiraat') fail('طالب القراءات لا يُسجَّل له حفظ ومراجعة');
+            if ($stu['program'] === 'qiraat' && empty($stu['allow_hr'])) fail('الحفظ والمراجعة مغلقان لطالب القراءات — فعّلهما من ملف الطالب (تعديل ← السماح بالحفظ والمراجعة)');
         }
         $oldEnr = 0;
-        if (!$id && !$redo && q('SELECT 1 FROM records WHERE student_id=? AND rec_date=? AND type=? AND surah=? AND ayah_from=? AND ayah_to=? AND COALESCE(surah_to,surah)=? AND COALESCE(enrollment_id,0)=?',
-                [$sid, $d, $type, $s, $f, $t, $s2, $enr ?: 0])->fetchColumn())
-            fail($type === 'qiraa' ? 'هذا التسميع مسجّل مسبقاً بنفس اليوم والمقطع' : 'هذا التسميع مسجّل مسبقاً بنفس اليوم والمقطع. إن كان إعادة فعلّم «إعادة» ثم احفظ');
+        $same = false;
+        if ($id) { $ob = q('SELECT rec_date,type,surah,surah_to,ayah_from,ayah_to FROM records WHERE id=?', [$id])->fetch();
+            $same = $ob && $ob['rec_date'] === $d && $ob['type'] === $type && (int)$ob['surah'] === $s && (int)($ob['surah_to'] ?: $ob['surah']) === $s2 && (int)$ob['ayah_from'] === $f && (int)$ob['ayah_to'] === $t; }
+        if (!$redo && !$same) {                                                // حماية: آيات سُمِّعت من قبل (للمراجعة: في اليوم نفسه فقط)
+            global $AYAHS;
+            $abs = function (int $sx, int $ax) use ($AYAHS) { $n = 0; for ($i = 0; $i < $sx - 1; $i++) $n += $AYAHS[$i]; return $n + $ax; };
+            $A = $abs($s, $f); $B = $abs($s2, $t); $hit = [];
+            $pr = [$sid, $type, $enr ?: 0]; $sql = 'SELECT id,rec_date,surah,surah_to,ayah_from,ayah_to FROM records WHERE student_id=? AND type=? AND COALESCE(enrollment_id,0)=?';
+            if ($type === 'review') { $sql .= ' AND rec_date=?'; $pr[] = $d; }
+            foreach (q($sql, $pr)->fetchAll() as $x) {
+                if ((int)$x['id'] === $id) continue;
+                if ($abs((int)$x['surah'], (int)$x['ayah_from']) <= $B && $abs((int)($x['surah_to'] ?: $x['surah']), (int)$x['ayah_to']) >= $A) $hit[] = $x['rec_date'];
+            }
+            if ($hit) fail('هذه الآيات سُمِّعت من قبل (' . implode('، ', array_slice(array_unique($hit), 0, 3)) . '). أكّد أنها إعادة ثم احفظ', 409);
+        }
         if ($id) {
             $old = q('SELECT student_id, enrollment_id FROM records WHERE id=?', [$id])->fetch();
             if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
@@ -661,7 +673,7 @@ try {
         $ouid = $id ? (int)q('SELECT user_id FROM students WHERE id=?', [$id])->fetchColumn() : 0;
         if ($sEmail !== '' && q('SELECT 1 FROM users WHERE email=? AND id<>?', [$sEmail, $ouid])->fetchColumn()) fail('بريد الطالب مستخدم لحساب آخر');
         if ($login === '' && ($sEmail !== '' || $sPhone !== '')) $login = $sEmail !== '' ? $sEmail : normUser($sPhone);      // بريد/جوال الطالب يكفيان اسماً للدخول
-        $program = ($b['program'] ?? 'hifz') === 'qiraat' ? 'qiraat' : 'hifz'; $hafiz = !empty($b['hafiz']) ? 1 : 0;
+        $program = ($b['program'] ?? 'hifz') === 'qiraat' ? 'qiraat' : 'hifz'; $hafiz = !empty($b['hafiz']) ? 1 : 0; $allowHr = $program === 'qiraat' && !empty($b['allow_hr']) ? 1 : 0;
         $hw = str('hafiz_where', 160); $hn = str('hafiz_note', 300);
         $priors = is_array($b['prior_list'] ?? null) ? array_slice($b['prior_list'], 0, 30) : [];
         $newPar = [];                                                      // أولياء أمور جدد: اسم + بريد (والجوال اختياري)
@@ -696,8 +708,8 @@ try {
             $mx = (int)q('SELECT max_students FROM schools WHERE id=?', [$school])->fetchColumn();
             if ($mx && (int)q('SELECT COUNT(*) FROM students WHERE school_id=?', [$school])->fetchColumn() >= $mx) fail('بلغت الحلقة الحد الأقصى المسموح من الطلاب (' . $mx . ')');
         }
-        if ($id) q('UPDATE students SET name=?, school_id=?, teacher_id=?, grp=?, program=?, hafiz=?, hafiz_where=?, hafiz_note=? WHERE id=?', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn, $id]);
-        else { q('INSERT INTO students (name,school_id,teacher_id,grp,program,hafiz,hafiz_where,hafiz_note) VALUES (?,?,?,?,?,?,?,?)', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn]); $id = (int)db()->lastInsertId(); }
+        if ($id) q('UPDATE students SET name=?, school_id=?, teacher_id=?, grp=?, program=?, hafiz=?, hafiz_where=?, hafiz_note=?, allow_hr=? WHERE id=?', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn, $allowHr, $id]);
+        else { q('INSERT INTO students (name,school_id,teacher_id,grp,program,hafiz,hafiz_where,hafiz_note,allow_hr) VALUES (?,?,?,?,?,?,?,?,?)', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn, $allowHr]); $id = (int)db()->lastInsertId(); }
         q('DELETE FROM student_teacher WHERE student_id=?', [$id]);
         foreach ($tids as $tid) q('INSERT INTO student_teacher (student_id,teacher_id) VALUES (?,?)', [$id, $tid]);
         q('DELETE FROM parent_student WHERE student_id=?', [$id]);
