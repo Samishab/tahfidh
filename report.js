@@ -100,10 +100,11 @@ function reportSheet(s, off, rg) {
 function rptTables(recs) {
   const cnt = (f, l) => { const x = recs.filter(f); return x.length ? `${l} ${x.length}` : ''; };
   const sm = [cnt(r => r.type === 'hifz', 'حفظ'), cnt(r => r.type === 'review', 'مراجعة'), cnt(r => r.type === 'qiraa', 'قراءة')].filter(Boolean).join(' • ');
+  const hasG = recs.some(x => x.grade);
   return `<div class="rp-box rp-tbl"><h3>📋 سجل التسميع <span>${recs.length} تسميع${sm ? ' — ' + sm : ''}</span></h3>
-    <table><tr><th>اليوم</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th><th>التقدير</th></tr>
-    ${recs.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em></td>
-      <td><b>${rngName(r)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.enrollmentId && enrById(r.enrollmentId) ? ' • ' + esc(enrById(r.enrollmentId).label) : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td><td>${r.grade || '—'}</td></tr>`; }).join('')}</table></div>`;
+    <table><tr><th>اليوم</th><th>النوع</th><th>السورة والآيات</th><th>الجزء</th>${hasG ? '<th>التقدير</th>' : ''}</tr>
+    ${recs.map(r => { const d = parse(r.date); return `<tr><td>${fmtDay(d)} ${d.getDate()}/${d.getMonth() + 1}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em>${r.redo ? ' <small>↺ إعادة</small>' : ''}</td>
+      <td><b>${rngName(r)}</b> ${r.from}–${r.to} <small>(${ayahs(r)})${r.enrollmentId && enrById(r.enrollmentId) ? ' • ' + esc(enrById(r.enrollmentId).label) : ''}</small></td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td>${r.grade || '—'}</td>` : ''}</tr>`; }).join('')}</table></div>`;
 }
 function viewReport() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();

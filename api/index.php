@@ -141,7 +141,7 @@ function iso(string $d): string { return date('c', strtotime($d)); }
 function recOut(array $r): array {
     return ['id' => (int)$r['id'], 'studentId' => (int)$r['student_id'], 'date' => $r['rec_date'], 'type' => $r['type'],
         'surah' => (int)$r['surah'], 'from' => (int)$r['ayah_from'], 'surahTo' => !empty($r['surah_to']) ? (int)$r['surah_to'] : (int)$r['surah'], 'to' => (int)$r['ayah_to'], 'grade' => $r['grade'],
-        'note' => $r['note'] ?? '', 'by' => $r['by_name'] ?? '', 'riwaya' => $r['riwaya'] ?? 'hafs', 'enrollmentId' => !empty($r['enrollment_id']) ? (int)$r['enrollment_id'] : null];
+        'note' => $r['note'] ?? '', 'redo' => !empty($r['redo']), 'by' => $r['by_name'] ?? '', 'riwaya' => $r['riwaya'] ?? 'hafs', 'enrollmentId' => !empty($r['enrollment_id']) ? (int)$r['enrollment_id'] : null];
 }
 function msgOut(array $m): array {
     return ['id' => (int)$m['id'], 'studentId' => (int)$m['student_id'], 'senderId' => (int)$m['sender_id'],
@@ -409,7 +409,9 @@ try {
     case 'record_save': {
         $u = need('admin', 'school_admin', 'teacher');
         [$d, $type, $s, $f, $t, $g, $note, $enr, $s2] = validRecord();
+        if ($type === 'qiraa') $g = '';                                        // القراءات بلا تقدير (الملاحظة اختيارية)
         $sid = (int)(body()['studentId'] ?? 0); $id = (int)(body()['id'] ?? 0);
+        $redo = !empty(body()['redo']) && $type !== 'qiraa' ? 1 : 0;           // «إعادة»: للحفظ والمراجعة فقط
         $stu = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
         if (!$stu || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
         if ($type === 'qiraa') {
@@ -423,13 +425,16 @@ try {
             if ($stu['program'] === 'qiraat') fail('طالب القراءات لا يُسجَّل له حفظ ومراجعة');
         }
         $oldEnr = 0;
+        if (!$id && !$redo && q('SELECT 1 FROM records WHERE student_id=? AND rec_date=? AND type=? AND surah=? AND ayah_from=? AND ayah_to=? AND COALESCE(surah_to,surah)=? AND COALESCE(enrollment_id,0)=?',
+                [$sid, $d, $type, $s, $f, $t, $s2, $enr ?: 0])->fetchColumn())
+            fail($type === 'qiraa' ? 'هذا التسميع مسجّل مسبقاً بنفس اليوم والمقطع' : 'هذا التسميع مسجّل مسبقاً بنفس اليوم والمقطع. إن كان إعادة فعلّم «إعادة» ثم احفظ');
         if ($id) {
             $old = q('SELECT student_id, enrollment_id FROM records WHERE id=?', [$id])->fetch();
             if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
             $oldEnr = (int)$old['enrollment_id'];
-            q('UPDATE records SET student_id=?, rec_date=?, type=?, surah=?, surah_to=?, ayah_from=?, ayah_to=?, grade=?, note=?, enrollment_id=? WHERE id=?', [$sid, $d, $type, $s, $s2 === $s ? null : $s2, $f, $t, $g, $note, $enr ?: null, $id]);
+            q('UPDATE records SET student_id=?, rec_date=?, type=?, surah=?, surah_to=?, ayah_from=?, ayah_to=?, grade=?, note=?, enrollment_id=?, redo=? WHERE id=?', [$sid, $d, $type, $s, $s2 === $s ? null : $s2, $f, $t, $g, $note, $enr ?: null, $redo, $id]);
         } else {
-            q('INSERT INTO records (student_id,teacher_id,rec_date,type,surah,surah_to,ayah_from,ayah_to,grade,note,enrollment_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [$sid, $u['id'], $d, $type, $s, $s2 === $s ? null : $s2, $f, $t, $g, $note, $enr ?: null]);
+            q('INSERT INTO records (student_id,teacher_id,rec_date,type,surah,surah_to,ayah_from,ayah_to,grade,note,enrollment_id,redo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [$sid, $u['id'], $d, $type, $s, $s2 === $s ? null : $s2, $f, $t, $g, $note, $enr ?: null, $redo]);
             $id = (int)db()->lastInsertId();
         }
         $en = $enr ? syncEnrollment($enr) : null;

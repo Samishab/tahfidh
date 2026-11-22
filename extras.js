@@ -138,7 +138,8 @@ function stmtRange() {
 }
 function stmtData(s) {
   const r = stmtRange();
-  return { r, recs: db.records.filter(x => x.studentId === s.id && x.date >= r.a && x.date <= r.b).sort((p, q) => p.date.localeCompare(q.date) || p.id - q.id) };
+  const ty = st.stype || '', flt = x => !ty || (ty === 'hq' ? x.type !== 'qiraa' : ty === 'qiraa' ? x.type === 'qiraa' : x.type === 'qiraa' && ('e:' + x.enrollmentId) === ty);
+  return { r, recs: db.records.filter(x => x.studentId === s.id && flt(x) && x.date >= r.a && x.date <= r.b).sort((p, q) => p.date.localeCompare(q.date) || p.id - q.id) };
 }
 function stmtCsv() {
   const s = student(st.sid), { r, recs } = stmtData(s);
@@ -150,7 +151,8 @@ function statementSheet(s) {
   const { r, recs } = stmtData(s);
   let a = r.a, b = r.b;
   if (a < '1000') { a = recs.length ? recs[0].date : today(); b = recs.length ? recs[recs.length - 1].date : today(); }
-  return reportSheet(s, 0, { a, b, label: r.label });
+  const tl = { hq: 'حفظ ومراجعة', qiraa: 'القراءات' }[st.stype || ''] || ((st.stype || '').startsWith('e:') ? (enrById(+st.stype.slice(2)) || {}).label : '');
+  return reportSheet(s, 0, { a, b, label: r.label + (tl ? ' — ' + tl : '') });
 }
 function viewStatement() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
@@ -162,6 +164,7 @@ function viewStatement() {
   <div class="card noprint">
     <h3>📑 ${esc(s.name)}</h3>
     <div class="hscroll" style="margin-bottom:10px">${chip('month', 'هذا الشهر')}${chip('last', 'الشهر الماضي')}${chip('3m', 'آخر 3 أشهر')}${chip('all', 'الكل')}${chip('custom', 'فترة محددة')}</div>
+    ${enrOf(s.id).some(en => !en.prior) || db.records.some(x => x.studentId === s.id && x.type === 'qiraa') ? `<div class="hscroll" style="margin-bottom:10px"><span class="hint" style="align-self:center">النوع</span>${[['', 'الكل'], ['hq', 'حفظ ومراجعة'], ['qiraa', 'القراءات']].concat(enrOf(s.id).filter(en => db.records.some(x => x.enrollmentId === en.id)).map(en => ['e:' + en.id, en.label])).map(([k, l]) => `<button class="chip ${(st.stype || '') === k ? 'on' : ''}" data-act="stype" data-id="${k}">${esc(l)}</button>`).join('')}</div>` : ''}
     <div style="margin-bottom:10px"><select id="smonth" title="اختر شهراً"><option value="">📅 اختر شهراً محدداً...</option>${Array.from({ length: 18 }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1), v = `m:${d.getFullYear()}-${pad(d.getMonth() + 1)}`; return `<option value="${v}" ${p === v ? 'selected' : ''}>${d.toLocaleDateString(L, { month: 'long', year: 'numeric' })}</option>`; }).join('')}</select></div>
     ${p === 'custom' ? `<div class="row" style="margin-bottom:10px"><div><label class="f">من</label><input type="date" id="sfrom" value="${r.a}" max="${today()}"></div><div><label class="f">إلى</label><input type="date" id="sto" value="${r.b}" max="${today()}"></div></div>` : ''}
     ${emptyHint}

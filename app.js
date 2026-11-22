@@ -73,8 +73,8 @@ function lastOf(sid, type, enr, until) {
   return db.records.filter(r => r.studentId === +sid && r.type === type && (!until || r.date <= until) && (enr ? r.enrollmentId === +enr : !r.enrollmentId))
     .sort((a, b) => (a.date + String(a.id).padStart(9, '0')).localeCompare(b.date + String(b.id).padStart(9, '0'))).pop();
 }
-function nextPos(sid, type, enr) {
-  const l = lastOf(sid, type, enr), qr = type === 'qiraa', P = o => ({ ...o, surahTo: o.surah });
+function nextPos(sid, type, enr, date) {
+  const l = lastOf(sid, type, enr, date), qr = type === 'qiraa', P = o => ({ ...o, surahTo: o.surah });
   if (!l) return P({ surah: qr ? 1 : (type === 'hifz' ? 78 : 1), from: 1, to: '', hint: qr ? 'بداية الختمة من سورة الفاتحة' : '' });
   const ls = rEnd(l);
   if (l.to < Q.count(ls)) return P({ surah: ls, from: l.to + 1, to: '', hint: `آخر موضع: ${Q.name(ls)} آية ${l.to} — يبدأ من الآية ${l.to + 1}` });
@@ -92,11 +92,12 @@ function curLine(s) {
   const e = currentEnr(s.id), l = lastOf(s.id, e ? 'qiraa' : 'hifz', e), en = e ? enrById(e) : null;
   return `${en ? '📚 ' + en.label : (s.program === 'qiraat' ? '📚 قراءات' : '📖 حفظ ومراجعة')}${l ? ' • وصل: ' + Q.name(rEnd(l)) + ' آية ' + l.to : ''}`;
 }
-const newForm = (sid, type = 'hifz', enr = null) => {
+const newForm = (sid, type = 'hifz', enr = null, date = '') => {
   const s = student(sid);
   if (enr === null) enr = s ? currentEnr(s.id) : '';
   if (enr) type = 'qiraa';
-  return { id: null, sid: sid || '', type, enr: enr ? String(enr) : '', date: today(), grade: '', note: '', ...nextPos(sid, type, enr) };
+  date = date || today();
+  return { id: null, sid: sid || '', type, enr: enr ? String(enr) : '', date, grade: '', note: '', redo: false, ...nextPos(sid, type, enr, date) };
 };
 // خريطة الحفظ: enr فارغ = حفظ المصحف، وإلا ختمة القراءة المحددة. raw = تجاهل علامة «حافظ» اليدوية
 function memorized(sid, enr, raw) {
@@ -342,7 +343,7 @@ function recCard(r, opts = {}) {
   const s = student(r.studentId), d = parse(r.date);
   return `<div class="rec ${r.type === 'review' ? 'review' : ''}">
     <div class="top"><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}">${{ hifz: '📖 حفظ', review: '🔁 مراجعة', qiraa: '📚 قراءة' }[r.type]}</span>
-      ${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : ''}${enrTag(r)}
+      ${r.grade ? `<span class="badge ${gcls(r.grade)}">${r.grade}</span>` : ''}${r.redo ? '<span class="badge">↺ إعادة</span>' : ''}${enrTag(r)}
       ${opts.noName || !s ? '' : `<span class="who">${esc(s.name)}</span>`}</div>
     <div class="sn">${recText(r)}</div>
     <div class="meta">${ayahs(r)} آية • ${Q.juzText(r.surah, r.from, r.to, rEnd(r))} • ${fmtDay(d)} ${fmtS(d)}</div>
@@ -424,8 +425,9 @@ function viewAdd() {
     <div class="hscroll">${[5, 10, 15, 20].map(n => `<button type="button" class="chip" data-act="len" data-id="${n}">${n} آيات</button>`).join('')}<button type="button" class="chip" data-act="len" data-id="end">إلى نهاية السورة</button></div>
     ${f.hint ? `<div class="hint" id="poshint" style="margin:-2px 0">💡 ${esc(f.hint)}</div>` : ''}
     <div class="info sm" id="info"></div>
-    <div class="hscroll" id="grades"><span class="hint" style="align-self:center">التقدير</span>${GRADES.map(g => `<button type="button" class="chip ${f.grade === g ? 'on' : ''}" data-act="grade" data-id="${g}">${g}</button>`).join('')}</div>
-    <input data-f="note" maxlength="500" value="${esc(f.note)}" placeholder="ملاحظة تظهر لولي الأمر (اختياري)">
+${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-self:center">التقدير</span>${GRADES.map(g => `<button type="button" class="chip ${f.grade === g ? 'on' : ''}" data-act="grade" data-id="${g}">${g}</button>`).join('')}</div>
+    <label class="row" style="gap:8px;font-size:14px"><input type="checkbox" data-f="redo" style="width:auto;flex:none" ${f.redo ? 'checked' : ''}> ↺ إعادة <small class="hint">(تسميع مكرر لنفس المقطع في نفس اليوم)</small></label>` : ''}
+    <input data-f="note" maxlength="500" value="${esc(f.note)}" placeholder="${f.enr ? 'ملاحظة (اختيارية)' : 'ملاحظة تظهر لولي الأمر (اختياري)'}">
     <button class="btn block gold" data-act="save-rec">${f.id ? '💾 حفظ التعديل' : '✅ حفظ التسميع'}</button>
     ${f.id ? '<button class="btn light block" data-act="cancel-edit">إلغاء التعديل</button>' : ''}
   </div>
@@ -452,12 +454,12 @@ async function saveRec() {
   if (!f.sid) return toast('اختر الطالب أولاً');
   if (!f.date) return toast('اختر التاريخ');
   if (!c.ok) return toast(c.msg);
-  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, surahTo: +(f.surahTo || f.surah), to: +f.to, grade: f.grade, note: f.note.trim() });
+  const r = await api('record_save', { id: f.id, studentId: +f.sid, date: f.date, type: f.type, enrollmentId: +f.enr || null, surah: +f.surah, from: +f.from, surahTo: +(f.surahTo || f.surah), to: +f.to, grade: f.enr ? '' : f.grade, note: f.note.trim(), redo: !f.enr && !!f.redo });
   db.records = db.records.filter(x => x.id !== r.record.id); db.records.push(r.record);
   let done = false;
   if (r.enrollment) { const old = enrById(r.enrollment.id); done = r.enrollment.status === 'completed' && (!old || old.status !== 'completed'); db.enrollments = db.enrollments.filter(e => e.id !== r.enrollment.id); db.enrollments.push(r.enrollment); }
   const was = f.id, sid = f.sid, type = f.type, date = f.date, enr = f.enr;
-  st.form = { ...newForm(sid, type, enr), date };
+  st.form = newForm(sid, type, enr, date);
   toast(done ? '🎉 أتمّ الختمة كاملة! أصدر له شهادة من ملفه' : was ? 'تم تعديل التسميع ✔' : 'تم حفظ التسميع ✔'); render();
 }
 
@@ -914,6 +916,7 @@ const acts = {
     setTimeout(() => { const m = $('#msgin'); if (m) { m.focus(); m.setSelectionRange(m.value.length, m.value.length); } }, 60);
   },
   'open-stmt': id => go('statement', { sid: +id, sp: new Date().getDate() <= 7 ? 'last' : 'month' }),
+  stype: id => { st.stype = id; render(); },
   sp: id => { if (id === 'custom') { const r = stmtRange(); if (r.a >= '2000') { st.sfrom = st.sfrom || r.a; st.sto = st.sto || r.b; } } st.sp = id; render(); },
   'csv-stmt': () => stmtCsv(),
   'csv-monthly': () => monthlyCsv(),
@@ -985,9 +988,11 @@ document.addEventListener('input', e => {
   if (t.id === 'q') { st.q = t.value; const p = t.selectionStart; render(); const q = $('#q'); q.focus(); q.setSelectionRange(p, p); return; }
   if (t.id === 'msgin') { st.draft = t.value; return; }
   if (!t.dataset.f || !st.form) return;
-  st.form[t.dataset.f] = t.value;
-  if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, surahTo: nf.surahTo, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
-  if (t.dataset.f === 'enr') { st.form.type = t.value ? 'qiraa' : 'hifz'; if (!st.form.id) Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value)); render(); return; }
+  st.form[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;
+  if (t.dataset.f === 'redo') return;
+  if (t.dataset.f === 'date') { if (!st.form.id && st.form.sid) { Object.assign(st.form, nextPos(st.form.sid, st.form.type, st.form.enr, st.form.date)); } render(); return; }
+  if (t.dataset.f === 'sid' && !st.form.id) { const nf = newForm(t.value, 'hifz', null, st.form.date); Object.assign(st.form, { sid: t.value, type: nf.type, enr: nf.enr, surah: nf.surah, surahTo: nf.surahTo, from: nf.from, to: nf.to, hint: nf.hint }); render(); return; }
+  if (t.dataset.f === 'enr') { st.form.type = t.value ? 'qiraa' : 'hifz'; if (t.value) { st.form.grade = ''; st.form.redo = false; } if (!st.form.id) Object.assign(st.form, nextPos(st.form.sid, st.form.type, t.value, st.form.date)); render(); return; }
   if (t.dataset.f === 'surah') { st.form.surahTo = st.form.surah; st.form.from = 1; st.form.to = ''; st.form.hint = ''; render(); return; }
   if (t.dataset.f === 'surahTo') { st.form.to = ''; st.form.hint = ''; render(); return; }
   if ((t.dataset.f === 'from' || t.dataset.f === 'to') && t.value !== '') {
