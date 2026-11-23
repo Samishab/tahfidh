@@ -813,7 +813,7 @@ try {
 
     case 'ijaza_get': {
         $u = need('admin', 'school_admin', 'teacher', 'parent', 'student'); $sch = (int)($u['school_id'] ?? 0);
-        $staff = in_array($u['role'], ['school_admin', 'teacher'], true);
+        $staff = in_array($u['role'], ['admin', 'school_admin', 'teacher'], true);
         $tpls = $staff ? array_map(fn($t) => ['id' => (int)$t['id'], 'name' => $t['name'], 'data' => json_decode($t['data'], true), 'at' => $t['updated_at']],
             q('SELECT * FROM ijaza_tpl WHERE school_id=? ORDER BY id', [$sch])->fetchAll()) : [];
         [$w, $p2] = scope($u, 'student_id');
@@ -823,7 +823,7 @@ try {
         out(['tpls' => $tpls, 'list' => $list]);
     }
     case 'ijaza_tpl_save': {
-        $u = need('school_admin', 'teacher'); $b = body(); $sch = (int)$u['school_id']; $id = (int)($b['id'] ?? 0);
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $sch = (int)$u['school_id']; $id = (int)($b['id'] ?? 0);
         $name = str('name', 120); if ($name === '') fail('اكتب اسم النموذج');
         $data = $b['data'] ?? null; if (!is_array($data)) fail('بيانات النموذج غير صحيحة');
         $js = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); if (strlen($js) > 3000000) fail('حجم النموذج كبير (الصور؟)');
@@ -835,21 +835,22 @@ try {
         out(['tpl' => ['id' => (int)$t['id'], 'name' => $t['name'], 'data' => json_decode($t['data'], true), 'at' => $t['updated_at']]]);
     }
     case 'ijaza_tpl_delete': {
-        $u = need('school_admin', 'teacher'); q('DELETE FROM ijaza_tpl WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
+        $u = need('admin', 'school_admin', 'teacher'); q('DELETE FROM ijaza_tpl WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
         out(['ok' => true]);
     }
     case 'ijaza_save': {   // إصدار جديد (id=0) أو تعديل إجازة صادرة
-        $u = need('school_admin', 'teacher'); $b = body(); $id = (int)($b['id'] ?? 0); $sch = (int)$u['school_id'];
+        $u = need('admin', 'school_admin', 'teacher'); $b = body(); $id = (int)($b['id'] ?? 0); $sch = (int)$u['school_id']; $adm = $u['role'] === 'admin';
         $data = $b['data'] ?? null; if (!is_array($data)) fail('بيانات الإجازة غير صحيحة');
         $js = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); if (strlen($js) > 3000000) fail('حجم الإجازة كبير (الصور؟)');
         $kind = ($b['kind'] ?? 'full') === 'short' ? 'short' : 'full'; $title = str('title', 200);
         $date = validDate($b['date'] ?? null) ?: date('Y-m-d');
         if ($id) {
-            $row = q('SELECT * FROM ijazat WHERE id=? AND school_id=?', [$id, $sch])->fetch(); if (!$row) fail('غير موجود', 404);
+            $row = $adm ? q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch() : q('SELECT * FROM ijazat WHERE id=? AND school_id=?', [$id, $sch])->fetch(); if (!$row) fail('غير موجود', 404);
             q('UPDATE ijazat SET data=?, title=?, kind=?, issued_at=?, tpl_id=? WHERE id=?', [$js, $title, $kind, $date, ($b['tplId'] ?? null) ?: null, $id]);
         } else {
             $sid = (int)($b['studentId'] ?? 0); $s = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
             if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
+            $sch = (int)$s['school_id'];
             $al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
             do { $serial = 'IJ-' . date('Y') . '-'; for ($i = 0; $i < 6; $i++) $serial .= $al[random_int(0, strlen($al) - 1)]; }
             while (q('SELECT 1 FROM ijazat WHERE serial=?', [$serial])->fetchColumn());
@@ -861,7 +862,7 @@ try {
             'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'data' => json_decode($i['data'], true)]]);
     }
     case 'ijaza_delete': {
-        $u = need('school_admin', 'teacher'); q('DELETE FROM ijazat WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
+        $u = need('admin', 'school_admin', 'teacher'); if ($u['role'] === 'admin') q('DELETE FROM ijazat WHERE id=?', [(int)(body()['id'] ?? 0)]); else q('DELETE FROM ijazat WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
         out(['ok' => true]);
     }
 
