@@ -483,3 +483,28 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 
 .ij-nmimg{width:380px;max-width:92%;height:auto;display:block;margin:0 auto}.ij-nmimg.cv{filter:brightness(0) invert(1);width:360px}
 .ij-ttimg{width:520px;max-width:94%;height:auto;display:block;margin:2px auto 6px}
+
+@font-face{font-family:'KFGQPC';src:url(fonts/kfgqpc.ttf)}
+@font-face{font-family:'IJ Mateen';src:url(fonts/ae_almateen.ttf)}
+@font-face{font-family:'IJ Manal';src:url(fonts/manal.ttf)}
+@font-face{font-family:'IJ Bahij';src:url(fonts/bahij_muna.ttf)}
+@font-face{font-family:'IJ Majalla';src:url(fonts/majalla.ttf)}
+@font-face{font-family:'QCF_BSML';src:url(fonts/qcf_BSML.ttf)}
+@font-face{font-family:'QCF_P063';src:url(fonts/qcf_P063.ttf)}
+@font-face{font-family:'QCF_P077';src:url(fonts/qcf_P077.ttf)}
+@font-face{font-family:'QCF_P262';src:url(fonts/qcf_P262.ttf)}
+@font-face{font-family:'QCF_P375';src:url(fonts/qcf_P375.ttf)}
+@font-face{font-family:'QCF_P427';src:url(fonts/qcf_P427.ttf)}
+.ijp{font-family:'KFGQPC','Amiri','Tajawal',serif}
+.ij-bx{font-size:18px;line-height:2}
+.ij-h{font-family:'IJ Manal','Aref Ruqaa','Amiri',serif}
+.ij-rd0,.ij-rd,.cv-rd{font-family:'IJ Mateen','Amiri',serif}
+.ij-nm,.cv-nm b{font-family:'IJ Bahij','Aref Ruqaa',serif}
+.qcf{font-size:1.15em;font-weight:400}
+.ij-bx p.qv{text-align:center;text-align-last:center;line-height:2.3}
+.ij-pi{float:right;width:84px;height:100px;object-fit:cover;border-radius:12px;border:2px solid var(--ia);margin:2px 0 4px 12px}
+.ij-bigbism img{width:80%;height:auto}
+.ij-bsimg{width:300px;max-width:80%;height:auto;margin:0 auto 4px;display:block}
+.ij-vsimg{width:360px;max-width:92%;height:auto;margin:0 auto 4px;display:block}
+.ij-ornimg{width:240px;height:auto}
+.sal{font-family:'Amiri','Traditional Arabic',serif;font-size:1.05em}

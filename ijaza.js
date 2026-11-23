@@ -88,16 +88,16 @@ const ijDefault = () => ({
 function ijVars(V, T) {
   const d = V.date ? parse(V.date) : new Date();
   const reading = (V.reading || T.reading || '').split('\n').map(x => x.trim()).filter(Boolean).join(' — ');
-  return { name: V.name || '', honor: V.honor || 'الشيخ الفاضل', job: V.job || '', res: V.res || '', reading, shaykh: T.shName || '', shtitle: T.shTitle || '',
+  return { name: V.name || '', honor: V.honor || 'الشيخ الفاضل', job: V.job || '', res: V.res || '', _imgs: T.imgs || {}, reading, shaykh: T.shName || '', shtitle: T.shTitle || '',
     day: fmtDay(d), date: d.toLocaleDateString('ar-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' }), hijri: fmtH(d), place: V.place || T.place || '', sessions: V.sessions || '' };
 }
-const ijInline = (s, vars) => esc(String(s).replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? '')).replace(/\[\[(.+?)\]\]/g, '<span class="r">$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+const ijInline = (s, vars) => esc(String(s).replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? '')).replace(/ﷺ/g, '<span class="sal">ﷺ</span>').replace(/⟦img:(\w+)⟧/g, (_, k) => (vars._imgs || {})[k] ? `<img class="ij-pi" src="${esc(vars._imgs[k])}" alt="">` : '').replace(/⟦(\d{3}|BSML):([^⟧]*)⟧/g, (_, f, t) => `<span class="qcf" style="font-family:'QCF_${f === 'BSML' ? 'BSML' : 'P' + f}'">${t}</span>`).replace(/\[\[(.+?)\]\]/g, '<span class="r">$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 function ijBlocks(text, vars) {
   return String(text || '').replace(/\r/g, '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => {
     if (/^##\s/.test(p)) return `<h4 class="ij-h">${ijInline(p.replace(/^##\s*/, ''), vars)}</h4>`;
     const lines = p.split('\n').map(x => ijInline(x, vars)).filter(x => x.trim());
     if (!lines.join('').trim()) return '';
-    return `<p>${lines.join('<br>')}</p>`;
+    return `<p${/⟦\d{3}:/.test(p) ? ' class="qv"' : ''}>${lines.join('<br>')}</p>`;
   }).filter(Boolean);
 }
 
@@ -108,7 +108,8 @@ function ijTile(th) {
   return 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
 }
 const ijRose = th => { const t = IJ_THEMES[th] || IJ_THEMES.crimson; return `<svg viewBox="-20 -20 40 40" class="ij-rose"><circle r="19" fill="${t.p}" stroke="${t.a}" stroke-width="1.4"/><g fill="${t.a}"><rect x="-11" y="-11" width="22" height="22"/><rect x="-11" y="-11" width="22" height="22" transform="rotate(45)"/></g><g fill="${t.s}"><rect x="-8" y="-8" width="16" height="16"/><rect x="-8" y="-8" width="16" height="16" transform="rotate(45)"/></g><circle r="5" fill="${t.l}"/><circle r="2.2" fill="${t.p}"/></svg>`; };
-const ijOrn = th => { const t = IJ_THEMES[th] || IJ_THEMES.crimson; return `<svg viewBox="0 0 220 24" class="ij-orn"><g fill="none" stroke="${t.a}" stroke-width="1.6"><path d="M4 12h78M138 12h78"/><path d="M82 12c8-12 16-12 28 0c12-12 20-12 28 0c-8 12-16 12-28 0c-12 12-20 12-28 0z" fill="${t.p}" stroke="${t.a}"/></g><circle cx="110" cy="12" r="3.4" fill="${t.a}"/></svg>`; };
+let IJ_CUR = {};
+const ijOrn = th => { if (IJ_CUR.ornImg) return `<img class="ij-orn ij-ornimg" src="${esc(IJ_CUR.ornImg)}" alt="">`; const t = IJ_THEMES[th] || IJ_THEMES.crimson; return `<svg viewBox="0 0 220 24" class="ij-orn"><g fill="none" stroke="${t.a}" stroke-width="1.6"><path d="M4 12h78M138 12h78"/><path d="M82 12c8-12 16-12 28 0c12-12 20-12 28 0c-8 12-16 12-28 0c-12 12-20 12-28 0z" fill="${t.p}" stroke="${t.a}"/></g><circle cx="110" cy="12" r="3.4" fill="${t.a}"/></svg>`; };
 
 /** صفحة بإطار: opts.nonum بلا رقم، opts.hdr يظهر شريط الاسم أعلاها */
 function ijPage(book, T, inner, o = {}) {
@@ -166,7 +167,7 @@ function ijCover(book, T, vars) {
 const ijReadLines = (T, V) => (V.reading || T.reading || '').split('\n').map(x => x.trim()).filter(Boolean).map((l, i) => `<div class="${i === 0 ? 'ij-rd0' : 'ij-rd'}">${esc(l)}</div>`).join('');
 const ijSealHtml = (T, cls = '') => T.sealImg ? `<img class="ij-seal ${cls}" src="${esc(T.sealImg)}" alt="">` : `<div class="ij-seal ij-seal0 ${cls}"><span>${esc(T.shName || '')}</span></div>`;
 function ijTitlePage(book, T, V, vars) {
-  ijPage(book, T, `<div class="ij-tp"><div class="ij-bism">بسم الله الرحمن الرحيم</div><div class="ij-verse">${esc(T.verse)}</div>
+  ijPage(book, T, `<div class="ij-tp">${T.bismImg ? `<img class="ij-bsimg" src="${esc(T.bismImg)}" alt="">` : '<div class="ij-bism">بسم الله الرحمن الرحيم</div>'}${T.verseImg ? `<img class="ij-vsimg" src="${esc(T.verseImg)}" alt="">` : `<div class="ij-verse">${esc(T.verse)}</div>`}
     ${T.titleImg ? `<img class="ij-ttimg" src="${esc(T.titleImg)}" alt="">` : `<h1 class="ij-big">${esc(T.coverTitle)}</h1>`}${ijReadLines(T, V)}
     <div class="ij-lab">${esc('الشيخ المقرئ المجيز')}</div>${T.photo ? `<img class="ij-ph" src="${esc(T.photo)}" alt="">` : ''}
     <div class="ij-sh">${T.nameImg ? `<img class="ij-nmimg" src="${esc(T.nameImg)}" alt="">` : `${ijOrn(T.theme)}<small>${esc(T.shTitle)}</small><h2>${esc(T.shName)}</h2><em>${esc(T.shDesc)}</em>`}</div>
@@ -207,11 +208,11 @@ function ijShortPage(book, T, V, vars) {
 
 /** يبني الكتاب كاملاً داخل #ijbook */
 function ijBuild(book, T, V) {
-  book.innerHTML = '';
+  book.innerHTML = ''; IJ_CUR = T;
   const vars = ijVars(V, T), inc = T.inc || {};
   if ((V.kind || 'full') === 'short') { ijShortPage(book, T, V, vars); return; }
   if (inc.cover) ijCover(book, T, vars);
-  if (inc.bism) ijPage(book, T, '<div class="ij-bigbism">بسم الله الرحمن الرحيم</div>');
+  if (inc.bism) ijPage(book, T, T.bismImg ? `<div class="ij-bigbism"><img src="${esc(T.bismImg)}" alt=""></div>` : '<div class="ij-bigbism">بسم الله الرحمن الرحيم</div>');
   if (inc.title) ijTitlePage(book, T, V, vars);
   const flows = [['muq', T.muq], ['body', T.body], ['bio', T.bio], ['summ', T.summ], ['detail', T.detail], ['qurra', T.qurra]];
   flows.forEach(([k, txt]) => { if (inc[k] && String(txt || '').trim()) ijFlow(book, T, ijBlocks(txt, vars)); });
@@ -251,7 +252,7 @@ addEventListener('resize', () => { if (st.view === 'ijaza') ijFit(); });
 
 /* ---------- محرر النموذج / نصوص الإجازة ---------- */
 const IJ_F = [
-  ['👤 بيانات الشيخ المجيز والشكل', [['shName', 'اسم الشيخ المجيز', 'in'], ['shTitle', 'صفة الشيخ (مثل: خادم القرآن الكريم)', 'in'], ['shDesc', 'وصف الشيخ (سطر تحت الاسم)', 'in'], ['hdr', 'نص شريط أعلى الصفحات (الافتراضي: اسم الشيخ)', 'in'], ['place', 'المكان الافتراضي (اختياري)', 'in'], ['theme', 'نمط الألوان', 'theme'], ['sealImg', 'ختم أو شعار الشيخ (صورة)', 'img'], ['photo', 'صورة الشيخ (اختياري)', 'img'], ['nameImg', 'لوحة اسم الشيخ بخط الثلث (صورة شفافة تحل محل اسمه ووصفه في الغلاف وصفحة العنوان)', 'img'], ['titleImg', 'لوحة عنوان الإجازة بخط الثلث (صورة شفافة، اختياري)', 'img']]],
+  ['👤 بيانات الشيخ المجيز والشكل', [['shName', 'اسم الشيخ المجيز', 'in'], ['shTitle', 'صفة الشيخ (مثل: خادم القرآن الكريم)', 'in'], ['shDesc', 'وصف الشيخ (سطر تحت الاسم)', 'in'], ['hdr', 'نص شريط أعلى الصفحات (الافتراضي: اسم الشيخ)', 'in'], ['place', 'المكان الافتراضي (اختياري)', 'in'], ['theme', 'نمط الألوان', 'theme'], ['sealImg', 'ختم أو شعار الشيخ (صورة)', 'img'], ['photo', 'صورة الشيخ (اختياري)', 'img'], ['nameImg', 'لوحة اسم الشيخ بخط الثلث (صورة شفافة تحل محل اسمه ووصفه في الغلاف وصفحة العنوان)', 'img'], ['titleImg', 'لوحة عنوان الإجازة بخط الثلث (صورة شفافة، اختياري)', 'img'], ['bismImg', 'البسملة بخط الثلث (صورة شفافة)', 'img'], ['verseImg', 'سطر الآية في صفحة العنوان (صورة، اختياري)', 'img'], ['ornImg', 'فاصل زخرفي (صورة، اختياري)', 'img']]],
   ['📖 القراءة المُجاز بها والغلاف', [['coverTitle', 'عنوان الإجازة', 'in'], ['verse', 'الآية أعلى صفحة العنوان', 'in'], ['reading', 'القراءة والرواة والطريق (كل سطر في سطر؛ الأول بالأسود والبقية بالأحمر)', 'ta', 4]]],
   ['✍️ المقدمة', [['muq', 'نص المقدمة', 'ta', 12]]],
   ['📜 نص الإجازة', [['body', 'نص الإجازة (يتعبأ اسم الطالب وقراءته تلقائياً)', 'ta', 16]]],
@@ -335,10 +336,10 @@ Object.assign(acts, {
   'ij-tpl-new': () => { st.ije = { target: 'tpl', id: 0, name: '', T: ijDefault() }; go('ijtpl'); },
   'ij-tpl-edit': id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; st.ije = { target: 'tpl', id: t.id, name: t.name, T: { ...ijDefault(), ...t.data, inc: { ...ijDefault().inc, ...(t.data.inc || {}) } } }; go('ijtpl'); },
   'ij-tpl-marghani': async () => {
-    if (typeof IJ_MARGHANI === 'undefined') return toast('ملف النموذج غير محمّل');
+    if (typeof IJ_MARGHANI === 'undefined') { toast('جارٍ تحميل النموذج...'); await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'ijaza_marghani.js?v=60'; s.onload = ok; s.onerror = () => no(new Error('تعذر تحميل ملف النموذج')); document.head.appendChild(s); }); }
     const old = IJ.tpls.find(t => t.name === IJ_MARGHANI.name);
     if (!confirm(old ? 'النموذج موجود؛ هل تستبدل محتواه بالنسخة الجاهزة (تضيع تعديلاتك عليه)؟' : 'إضافة نموذج «إجازة يعقوب — المرغني» جاهزاً بكل بياناته؟ (يمكنك تعديله بعدها)')) return;
-    const d = { ...ijDefault(), ...IJ_MARGHANI.data }; d.muq = IJ_MUQ + String.fromCharCode(10, 10) + (d.muqExtra || ''); delete d.muqExtra;
+    const d = { ...ijDefault(), ...IJ_MARGHANI.data }; if (d.muqDocx) d.muq = d.muqDocx; delete d.muqDocx; delete d.muqExtra;
     const r = await api('ijaza_tpl_save', { id: old ? old.id : 0, name: IJ_MARGHANI.name, data: d }); if (old) Object.assign(old, r.tpl); else IJ.tpls.push(r.tpl); toast('تمت إضافة النموذج ✔'); render();
   },
   'ij-tpl-copy': async id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; const r = await api('ijaza_tpl_save', { id: 0, name: t.name + ' (نسخة)', data: t.data }); IJ.tpls.push(r.tpl); toast('تم النسخ'); render(); },
@@ -358,7 +359,7 @@ document.addEventListener('change', e => {
   if (t.dataset && t.dataset.ijimg) {   // ضغط الصورة وتحويلها إلى data URL صغير
     const k = t.dataset.ijimg, fl = t.files[0]; if (!fl) return;
     const im = new Image(), rd = new FileReader();
-    rd.onload = () => { im.onload = () => { const m = k === 'photo' ? 360 : (k === 'nameImg' || k === 'titleImg') ? 1000 : 420, sc = Math.min(1, m / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); const url = c.toDataURL('image/png'); $('#ijtform').elements[k].value = url; const p = $('#ijimg_' + k); p.src = url; p.hidden = false; }; im.src = rd.result; };
+    rd.onload = () => { im.onload = () => { const m = k === 'photo' ? 360 : (k === 'nameImg' || k === 'titleImg' || k === 'bismImg' || k === 'verseImg' || k === 'ornImg') ? 1000 : 420, sc = Math.min(1, m / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); const url = c.toDataURL('image/png'); $('#ijtform').elements[k].value = url; const p = $('#ijimg_' + k); p.src = url; p.hidden = false; }; im.src = rd.result; };
     rd.readAsDataURL(fl);
   }
   if (t.name && t.name.startsWith('inc_')) { const l = t.closest('label'); if (l) l.classList.toggle('on', t.checked); }
