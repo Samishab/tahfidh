@@ -192,7 +192,8 @@ function ijShrink(bx, el, kind) {
   let k = 1;
   const base = kind === 'tr' ? 15 : 14;
   const m = kind === 'tr' ? bx : el, pad = kind === 'tr' ? 24 : -1;
-  for (let i = 0; i < 60 && m.scrollHeight > m.clientHeight - pad && k > .3; i++) { k -= .02; el.style.setProperty('--k', k.toFixed(2)); el.style.fontSize = (base * k).toFixed(1) + 'px'; }
+  const over = () => kind === 'tr' ? el.offsetHeight > m.clientHeight - 24 : m.scrollHeight > m.clientHeight + 1;
+  for (let i = 0; i < 80 && over() && k > .25; i++) { k -= .02; el.style.setProperty('--k', k.toFixed(2)); el.style.fontSize = (base * k).toFixed(1) + 'px'; }
 }
 function ijShortPage(book, T, V, vars) {
   const chain = String(T.shortChain || '').split('\n').map(x => x.trim()).filter(Boolean);
@@ -291,6 +292,7 @@ function viewIjTpls() {
   <p class="hint">النموذج هو نص الإجازة وأسانيدها وشكلها؛ تعدّله مرة واحدة ثم تُصدر منه لكل طالب إجازة بحسب اسمه وبياناته.</p>
   ${IJ.tpls.length ? `<div class="list">${IJ.tpls.map(t => `<div class="item" style="cursor:default"><div class="avatar">📜</div><div class="t"><b>${esc(t.name)}</b><small>${esc((t.data || {}).shName || '')}</small></div>
     <button class="btn light sm auto" data-act="ij-tpl-edit" data-id="${t.id}">✏️ تعديل</button><button class="btn light sm auto" data-act="ij-tpl-copy" data-id="${t.id}">نسخ</button><button class="btn red sm auto" data-act="ij-tpl-del" data-id="${t.id}">🗑</button></div>`).join('')}</div>` : empty('📜', 'لا توجد نماذج بعد — أنشئ أول نموذج')}
+  <button class="btn gold block" style="margin-top:10px" data-act="ij-tpl-marghani">📥 إضافة نموذج «إجازة يعقوب — المرغني» جاهزاً</button>
   <button class="btn light block" style="margin-top:10px" data-act="ij-back">رجوع</button></div>`;
 }
 
@@ -332,6 +334,12 @@ Object.assign(acts, {
   'ij-edit': id => { const i = IJ.list.find(x => x.id === +id); if (i) ijIssueForm(i.studentId, i.id); },
   'ij-tpl-new': () => { st.ije = { target: 'tpl', id: 0, name: '', T: ijDefault() }; go('ijtpl'); },
   'ij-tpl-edit': id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; st.ije = { target: 'tpl', id: t.id, name: t.name, T: { ...ijDefault(), ...t.data, inc: { ...ijDefault().inc, ...(t.data.inc || {}) } } }; go('ijtpl'); },
+  'ij-tpl-marghani': async () => {
+    if (typeof IJ_MARGHANI === 'undefined') return toast('ملف النموذج غير محمّل');
+    if (!confirm('إضافة نموذج «إجازة يعقوب — المرغني» جاهزاً بكل بياناته؟ (يمكنك تعديله بعدها)')) return;
+    const d = { ...ijDefault(), ...IJ_MARGHANI.data }; d.muq = IJ_MUQ + String.fromCharCode(10, 10) + (d.muqExtra || ''); delete d.muqExtra;
+    const r = await api('ijaza_tpl_save', { id: 0, name: IJ_MARGHANI.name, data: d }); IJ.tpls.push(r.tpl); toast('تمت إضافة النموذج ✔'); render();
+  },
   'ij-tpl-copy': async id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; const r = await api('ijaza_tpl_save', { id: 0, name: t.name + ' (نسخة)', data: t.data }); IJ.tpls.push(r.tpl); toast('تم النسخ'); render(); },
   'ij-tpl-del': async id => { if (!confirm('حذف هذا النموذج؟ الإجازات الصادرة منه تبقى كما هي.')) return; await api('ijaza_tpl_delete', { id: +id }); IJ.tpls = IJ.tpls.filter(t => t.id !== +id); render(); },
   'ij-tpl-back': () => { const e = st.ije; st.ije = null; go(e && e.target === 'ijaza' ? 'ijaza' : 'ijtpls'); },

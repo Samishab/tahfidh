@@ -478,3 +478,5 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 @media print{.ijwrap{height:auto!important}.ijbook{transform:none!important;gap:0!important;width:210mm!important}.ijp{width:210mm!important;height:297mm!important}.ij-in{inset:9mm}}
 .ij-gp{justify-content:space-evenly;gap:0}.ij-gp .ij-nm{font-size:32px}.ij-gp .ij-rd0{font-size:24px}.ij-gp .ij-rd{font-size:22px}.ij-w{font-size:16px}.ij-dt{font-size:17px}.ij-tp{justify-content:space-evenly}
 .ij-sp>*,.ij-gp>*,.ij-tp>*{flex-shrink:0}
+
+.ij-trr span{text-align:center;text-align-last:center}
