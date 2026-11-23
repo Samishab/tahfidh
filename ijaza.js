@@ -255,7 +255,7 @@ function viewIjaza() {
     <p class="hint" style="margin:8px 0 0">${src.V.kind === 'short' ? 'ورقة واحدة A4' : 'الكتاب بحجم A4 طولي'} — اختر «حفظ بتنسيق PDF» من نافذة الطباعة${rec ? ` • رقم الإجازة: <b dir="ltr">${esc(rec.serial)}</b>` : ' • (معاينة غير محفوظة)'}</p></div>
   <div class="rptwrap ijwrap" id="ijwrap"><div id="ijbook" class="ijbook"></div></div>`;
 }
-const IJ_FONTS = ['KFGQPC', 'IJ Mateen', 'IJ Manal', 'IJ Bahij', 'QCF_BSML', 'QCF_P063', 'QCF_P077', 'QCF_P262', 'QCF_P375', 'QCF_P427', 'Amiri', 'Aref Ruqaa'];
+const IJ_FONTS = ['KFGQPC', 'IJ Thuluth', 'IJ Mateen', 'IJ Manal', 'IJ Bahij', 'QCF_BSML', 'QCF_P063', 'QCF_P077', 'QCF_P262', 'QCF_P375', 'QCF_P427', 'Amiri', 'Aref Ruqaa'];
 let ijFontsP = null;
 const ijFontsReady = () => ijFontsP || (ijFontsP = !document.fonts ? Promise.resolve() : Promise.race([Promise.all(IJ_FONTS.map(f => document.fonts.load('18px "' + f + '"').catch(() => 0))), new Promise(r => setTimeout(r, 8000))]).then(() => document.fonts.ready));
 function ijPost() {

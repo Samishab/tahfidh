@@ -508,3 +508,7 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .ij-vsimg{width:360px;max-width:92%;height:auto;margin:0 auto 4px;display:block}
 .ij-ornimg{width:240px;height:auto}
 .sal{font-family:'Amiri','Traditional Arabic',serif;font-size:1.05em}
+@font-face{font-family:'IJ Thuluth';src:url(fonts/thuluth1.ttf)}
+@font-face{font-family:'IJ ThuluthB';src:url(fonts/thuluth_ijaza.ttf)}
+.ij-h,.ij-nm,.cv-nm b,.ij-signame,.ij-big,.ij-bism,.cv-ring span,.ij-sh h2,.cv-sh h2,.ij-spf b{font-family:'IJ Thuluth','IJ Manal','Aref Ruqaa',serif}
+.ij-h{font-size:24px}
