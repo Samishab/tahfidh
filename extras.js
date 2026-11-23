@@ -7,6 +7,7 @@ function certSheet(c) {
   let body;
   if (c.kind === 'khatm') body = `قد أتمّ حفظ القرآن الكريم كاملاً${grade}، نسأل الله أن ينفعه بما حفظ ويجعله من أهل القرآن.`;
   else if (c.kind === 'qiraat') body = `قد أتمّ قراءة القرآن الكريم ختمةً كاملةً بـ <b>${esc(c.label)}</b>${grade}، نسأل الله أن ينفعه بما قرأ ويجعله من أهل القرآن.`;
+  else if (c.kind === 'hifz' || c.kind === 'review') body = `قد أتمّ ${c.kind === 'hifz' ? 'حفظ' : 'مراجعة'} <b>${esc(c.label)}</b> خلال الفترة من <b>${fmtG(parse(c.from))}</b> إلى <b>${fmtG(parse(c.to))}</b>${grade}، نسأل الله أن ينفعه بما ${c.kind === 'hifz' ? 'حفظ' : 'راجع'} ويجعله من أهل القرآن.`;
   else if (c.kind === 'period') body = `وذلك عن الفترة من <b>${fmtG(parse(c.from))}</b> إلى <b>${fmtG(parse(c.to))}</b>${grade}، تقديراً لجهده واجتهاده في الحفظ والمراجعة.`;
   else body = esc(c.note) || `تقديراً لجهده واجتهاده${grade}.`;
   const extra = c.kind !== 'custom' && c.note ? `<p class="ct-extra">${esc(c.note)}</p>` : '';
@@ -38,7 +39,7 @@ function certForm(sid, enrId) {
   const s = student(sid), doneE = enrOf(s.id).filter(e => e.status === 'completed');
   modal(`<h2>🏆 إصدار شهادة — ${esc(s.name)}</h2>
   <form id="certform" class="gap" data-sid="${s.id}">
-    <div><label class="f">نوع الشهادة</label><select name="kind" id="cf_kind"><option value="khatm">ختم حفظ المصحف كاملاً</option><option value="qiraat">إتمام ختمة قراءات</option><option value="period">شهادة فترة (تفوق / إنجاز)</option><option value="custom">شهادة مخصصة</option></select></div>
+    <div><label class="f">نوع الشهادة</label><select name="kind" id="cf_kind"><option value="khatm">ختم حفظ المصحف كاملاً</option><option value="qiraat">إتمام ختمة قراءات (شهادة مبدئية — الإجازة الرسمية من «الإجازات»)</option><option value="hifz">إتمام حفظ خلال فترة (بالتقدير)</option><option value="review">إتمام مراجعة خلال فترة (بالتقدير)</option><option value="period">شهادة فترة (تفوق / إنجاز)</option><option value="custom">شهادة مخصصة</option></select></div>
     <div><label class="f">عنوان الشهادة <span class="hint">(اتركه فارغاً للعنوان الافتراضي)</span></label><input name="title" id="cf_title" maxlength="160" placeholder="شهادة ختم حفظ القرآن الكريم"></div>
     <div id="cf_enr" style="display:none"><label class="f">الختمة المنجزة</label>${doneE.length ? `<select name="enr">${doneE.map(e => `<option value="${e.id}" ${+enrId === e.id ? 'selected' : ''}>${esc(e.label)}</option>`).join('')}</select>` : '<p class="hint">لا توجد ختمة منجزة بعد.</p>'}</div>
     <div id="cf_period" class="row" style="display:none"><div><label class="f">من</label><input type="date" name="pf"></div><div><label class="f">إلى</label><input type="date" name="pt"></div></div>
@@ -49,7 +50,7 @@ function certForm(sid, enrId) {
   </form>`);
   if (enrId) { $('#cf_kind').value = 'qiraat'; $('#cf_enr').style.display = ''; $('#cf_title').placeholder = certDefaultTitle('qiraat'); }
 }
-const certDefaultTitle = k => k === 'qiraat' ? 'شهادة إتمام قراءة ختمة كاملة' : k === 'khatm' ? 'شهادة ختم حفظ القرآن الكريم' : k === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
+const certDefaultTitle = k => k === 'hifz' ? 'شهادة إتمام حفظ' : k === 'review' ? 'شهادة إتمام مراجعة' : k === 'qiraat' ? 'شهادة إتمام قراءة ختمة كاملة' : k === 'khatm' ? 'شهادة ختم حفظ القرآن الكريم' : k === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
 
 /* ---------- الكشف الشهري للحلقة ---------- */
 function monthlyData(off, school) {
@@ -231,4 +232,14 @@ function hafizForm(s) {
     <div><label class="f">أين أتمّه؟ <span class="hint">(اختياري)</span></label><input name="where" maxlength="160" value="${esc(s.hafizWhere)}" placeholder="الحلقة / المدرسة / السنة"></div>
     <div><label class="f">ملاحظات <span class="hint">(اختياري)</span></label><textarea name="note" maxlength="300">${esc(s.hafizNote)}</textarea></div>
     <button class="btn block">حفظ</button><button type="button" class="btn light block" data-act="close">إلغاء</button></form>`);
+}
+
+/** وصف ما أُنجز في الفترة من تسميع الطالب (للشهادة): عدد الآيات والسور */
+function certScope(sid, type, from, to) {
+  const rs = db.records.filter(r => r.studentId === sid && r.type === type && (!from || r.date >= from) && (!to || r.date <= to));
+  if (!rs.length) throw new Error('لا يوجد تسميع من هذا النوع في الفترة المحددة');
+  const n = rs.reduce((x, r) => x + ayahs(r), 0), sur = [];
+  rs.slice().sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id).forEach(r => { for (let s = r.surah; s <= rEnd(r); s++) if (!sur.includes(s)) sur.push(s); });
+  const names = sur.length <= 4 ? 'سورة ' + sur.map(s => Q.name(s)).join(' و') : `من سورة ${Q.name(sur[0])} إلى سورة ${Q.name(sur[sur.length - 1])} (${sur.length} سورة)`;
+  return `${n} آية — ${names}`;
 }

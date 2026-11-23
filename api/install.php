@@ -19,7 +19,7 @@ $pdo->exec("ALTER TABLE users MODIFY role ENUM('admin','school_admin','teacher',
 $pdo->exec("ALTER TABLE signup_requests MODIFY role ENUM('parent','teacher','school','solo') NOT NULL");
 $pdo->exec("UPDATE users u SET school_id = (SELECT s.school_id FROM parent_student ps JOIN students s ON s.id=ps.student_id WHERE ps.parent_id=u.id LIMIT 1) WHERE u.role='parent' AND u.school_id IS NULL");
 $pdo->exec("ALTER TABLE records MODIFY type ENUM('hifz','review','qiraa') NOT NULL");
-$pdo->exec("ALTER TABLE certificates MODIFY kind ENUM('khatm','period','custom','qiraat') NOT NULL");
+$pdo->exec("ALTER TABLE certificates MODIFY kind ENUM('khatm','period','custom','qiraat','hifz','review') NOT NULL");
 // البريد: اسم الدخول بطول أكبر (البريد)، وفهرس فريد للبريد، وقيم افتراضية للإعدادات
 $pdo->exec("ALTER TABLE users MODIFY username VARCHAR(190) NOT NULL");
 $pdo->exec("ALTER TABLE signup_requests MODIFY username VARCHAR(190) NOT NULL");

@@ -1,5 +1,5 @@
-const CACHE = 'tahfidh-v55';
-const ASSETS = ['./', 'index.html', 'style.css', 'quran.js', 'app.js', 'report.js', 'extras.js', 'admin.js', 'icon.svg', 'manifest.json'];
+const CACHE = 'tahfidh-v57';
+const ASSETS = ['./', 'index.html', 'style.css', 'quran.js', 'app.js', 'report.js', 'extras.js', 'admin.js', 'ijaza.js', 'icon.svg', 'manifest.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

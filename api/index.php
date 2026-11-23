@@ -771,7 +771,7 @@ try {
         $u = need('admin', 'school_admin', 'teacher'); $b = body(); $sid = (int)($b['studentId'] ?? 0);
         $s = q('SELECT s.*, sc.name AS school FROM students s LEFT JOIN schools sc ON sc.id=s.school_id WHERE s.id=?', [$sid])->fetch();
         if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
-        $kind = $b['kind'] ?? ''; if (!in_array($kind, ['khatm', 'period', 'custom', 'qiraat'], true)) fail('نوع الشهادة غير صحيح');
+        $kind = $b['kind'] ?? ''; if (!in_array($kind, ['khatm', 'period', 'custom', 'qiraat', 'hifz', 'review'], true)) fail('نوع الشهادة غير صحيح');
         $title = str('title', 160); $enrId = null; $label = '';
         if ($kind === 'khatm') {
             if (!memorizedAll($sid)) fail('لم يُتمّ الطالب حفظ المصحف كاملاً بعد');
@@ -782,16 +782,19 @@ try {
             if ($e['status'] !== 'completed') fail('لم تكتمل هذه الختمة بعد');
             $enrId = (int)$e['id']; $label = $e['label'];
             if ($title === '') $title = 'شهادة إتمام قراءة ختمة كاملة';
+        } elseif (in_array($kind, ['hifz', 'review'], true)) {
+            $label = str('label', 300);
+            if ($title === '') $title = $kind === 'hifz' ? 'شهادة إتمام حفظ' : 'شهادة إتمام مراجعة';
         } elseif ($title === '') $title = $kind === 'period' ? 'شهادة تفوق وإنجاز' : 'شهادة تقدير';
         $pf = validDate($b['period_from'] ?? null); $pt = validDate($b['period_to'] ?? null);
-        if ($kind === 'period' && (!$pf || !$pt || $pf > $pt)) fail('حدد فترة صحيحة (من / إلى)');
+        if (in_array($kind, ['period', 'hifz', 'review'], true) && (!$pf || !$pt || $pf > $pt)) fail('حدد فترة صحيحة (من / إلى)');
         $grade = (string)($b['grade'] ?? ''); if ($grade !== '' && !in_array($grade, GRADES, true)) fail('تقدير غير صحيح');
         $date = validDate($b['date'] ?? null) ?: date('Y-m-d');
         $al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         do { $serial = 'TH-' . date('Y') . '-'; for ($i = 0; $i < 6; $i++) $serial .= $al[random_int(0, strlen($al) - 1)]; }
         while (q('SELECT 1 FROM certificates WHERE serial=?', [$serial])->fetchColumn());
         q('INSERT INTO certificates (serial,student_id,student_name,school_name,kind,title,enrollment_id,riwaya_label,period_from,period_to,grade,note,issued_by,issuer_name,issued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            [$serial, $sid, $s['name'], $s['school'] ?? '', $kind, $title, $enrId, $label, $kind === 'period' ? $pf : null, $kind === 'period' ? $pt : null, $grade, str('note', 300), $u['id'], $u['name'], $date]);
+            [$serial, $sid, $s['name'], $s['school'] ?? '', $kind, $title, $enrId, $label, in_array($kind, ['period', 'hifz', 'review'], true) ? $pf : null, in_array($kind, ['period', 'hifz', 'review'], true) ? $pt : null, $grade, str('note', 300), $u['id'], $u['name'], $date]);
         out(['cert' => certOut(q('SELECT * FROM certificates WHERE id=?', [(int)db()->lastInsertId()])->fetch())]);
     }
     case 'cert_delete': {
@@ -806,6 +809,60 @@ try {
         q("INSERT INTO login_attempts (ip,username) VALUES (?, 'verify')", [ip()]);
         $c = q('SELECT * FROM certificates WHERE serial=?', [strtoupper(trim((string)($_GET['code'] ?? '')))])->fetch();
         out($c ? ['valid' => true, 'cert' => certOut($c)] : ['valid' => false]);
+    }
+
+    case 'ijaza_get': {
+        $u = need('admin', 'school_admin', 'teacher', 'parent', 'student'); $sch = (int)($u['school_id'] ?? 0);
+        $staff = in_array($u['role'], ['school_admin', 'teacher'], true);
+        $tpls = $staff ? array_map(fn($t) => ['id' => (int)$t['id'], 'name' => $t['name'], 'data' => json_decode($t['data'], true), 'at' => $t['updated_at']],
+            q('SELECT * FROM ijaza_tpl WHERE school_id=? ORDER BY id', [$sch])->fetchAll()) : [];
+        [$w, $p2] = scope($u, 'student_id');
+        $list = array_map(fn($i) => ['id' => (int)$i['id'], 'serial' => $i['serial'], 'studentId' => (int)$i['student_id'], 'tplId' => $i['tpl_id'] ? (int)$i['tpl_id'] : null, 'kind' => $i['kind'],
+            'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'data' => json_decode($i['data'], true)],
+            q("SELECT * FROM ijazat WHERE $w ORDER BY id DESC", $p2)->fetchAll());
+        out(['tpls' => $tpls, 'list' => $list]);
+    }
+    case 'ijaza_tpl_save': {
+        $u = need('school_admin', 'teacher'); $b = body(); $sch = (int)$u['school_id']; $id = (int)($b['id'] ?? 0);
+        $name = str('name', 120); if ($name === '') fail('اكتب اسم النموذج');
+        $data = $b['data'] ?? null; if (!is_array($data)) fail('بيانات النموذج غير صحيحة');
+        $js = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); if (strlen($js) > 3000000) fail('حجم النموذج كبير (الصور؟)');
+        if ($id) {
+            if (!q('SELECT 1 FROM ijaza_tpl WHERE id=? AND school_id=?', [$id, $sch])->fetchColumn()) fail('النموذج غير موجود', 404);
+            q('UPDATE ijaza_tpl SET name=?, data=?, updated_by=? WHERE id=?', [$name, $js, $u['id'], $id]);
+        } else { q('INSERT INTO ijaza_tpl (school_id,name,data,updated_by) VALUES (?,?,?,?)', [$sch, $name, $js, $u['id']]); $id = (int)db()->lastInsertId(); }
+        $t = q('SELECT * FROM ijaza_tpl WHERE id=?', [$id])->fetch();
+        out(['tpl' => ['id' => (int)$t['id'], 'name' => $t['name'], 'data' => json_decode($t['data'], true), 'at' => $t['updated_at']]]);
+    }
+    case 'ijaza_tpl_delete': {
+        $u = need('school_admin', 'teacher'); q('DELETE FROM ijaza_tpl WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
+        out(['ok' => true]);
+    }
+    case 'ijaza_save': {   // إصدار جديد (id=0) أو تعديل إجازة صادرة
+        $u = need('school_admin', 'teacher'); $b = body(); $id = (int)($b['id'] ?? 0); $sch = (int)$u['school_id'];
+        $data = $b['data'] ?? null; if (!is_array($data)) fail('بيانات الإجازة غير صحيحة');
+        $js = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); if (strlen($js) > 3000000) fail('حجم الإجازة كبير (الصور؟)');
+        $kind = ($b['kind'] ?? 'full') === 'short' ? 'short' : 'full'; $title = str('title', 200);
+        $date = validDate($b['date'] ?? null) ?: date('Y-m-d');
+        if ($id) {
+            $row = q('SELECT * FROM ijazat WHERE id=? AND school_id=?', [$id, $sch])->fetch(); if (!$row) fail('غير موجود', 404);
+            q('UPDATE ijazat SET data=?, title=?, kind=?, issued_at=?, tpl_id=? WHERE id=?', [$js, $title, $kind, $date, ($b['tplId'] ?? null) ?: null, $id]);
+        } else {
+            $sid = (int)($b['studentId'] ?? 0); $s = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
+            if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
+            $al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            do { $serial = 'IJ-' . date('Y') . '-'; for ($i = 0; $i < 6; $i++) $serial .= $al[random_int(0, strlen($al) - 1)]; }
+            while (q('SELECT 1 FROM ijazat WHERE serial=?', [$serial])->fetchColumn());
+            q('INSERT INTO ijazat (serial,school_id,student_id,tpl_id,kind,student_name,title,data,issued_at,issued_by) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                [$serial, $sch, $sid, ($b['tplId'] ?? null) ?: null, $kind, str('student', 160) ?: $s['name'], $title, $js, $date, $u['id']]); $id = (int)db()->lastInsertId();
+        }
+        $i = q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch();
+        out(['ijaza' => ['id' => (int)$i['id'], 'serial' => $i['serial'], 'studentId' => (int)$i['student_id'], 'tplId' => $i['tpl_id'] ? (int)$i['tpl_id'] : null, 'kind' => $i['kind'],
+            'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'data' => json_decode($i['data'], true)]]);
+    }
+    case 'ijaza_delete': {
+        $u = need('school_admin', 'teacher'); q('DELETE FROM ijazat WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
+        out(['ok' => true]);
     }
 
     case 'set_qiraat': {

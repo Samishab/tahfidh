@@ -49,7 +49,7 @@ const L = 'ar-u-nu-latn';
 const fmtDay = d => d.toLocaleDateString(L, { weekday: 'long' });
 const fmtG = d => d.toLocaleDateString(L, { day: 'numeric', month: 'long', year: 'numeric' });
 const dmy = d => `<bdi dir="rtl">${pad(d.getDate())}‏/‏${pad(d.getMonth() + 1)}‏/‏${d.getFullYear()}</bdi>`;
-const fmtDMY = d => `${fmtDay(d)} | ${dmy(d)}`;
+const fmtDMY = d => `${fmtDay(d)} <b>|</b> ${dmy(d)}`;
 const fmtS = d => d.toLocaleDateString(L, { day: 'numeric', month: 'short' });
 const fmtH = d => d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
 const fmtT = s => new Date(s).toLocaleString(L, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -312,6 +312,7 @@ async function logout() { try { await api('logout', {}); } catch { } try { sessi
 const TITLES = {
   home: () => staff() ? ['الرئيسية', ''] : [role() === 'parent' ? 'أبنائي' : 'متابعتي', ''],
   add: () => ['تسجيل تسميع', 'حفظ جديد أو مراجعة'], students: () => ['الطلاب', ''], student: () => ['ملف الطالب', ''],
+  ijaza: () => ['الإجازة', 'قابلة للطباعة PDF'], ijtpls: () => ['نماذج الإجازة', 'النصوص والأسانيد'], ijtpl: () => ['تعديل نموذج الإجازة', 'نصوص وأسانيد وشكل'],
   stats: () => ['الإحصائيات', 'أسبوعية وشهرية'], report: () => ['التقرير الشهري', 'قابل للطباعة PDF'], settings: () => ['الإعدادات', 'القراءات'], monthly: () => ['الكشف الشهري', 'إحصائيات الحلقة'], cert: () => ['الشهادة', 'قابلة للطباعة'], statement: () => ['كشف التسميع', 'للفترة المختارة'], messages: () => ['الرسائل', 'ملاحظات واستفسارات'],
   about: () => ['عن المنصة', ''], manage: () => ['الإدارة', 'لوحة التحكم والحسابات'], account: () => ['حسابي', ''], search: () => ['البحث', 'في حدود صلاحياتك']
 };
@@ -598,6 +599,7 @@ function viewStudent() {
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${juz.map((p, i) => `<div style="text-align:center;font-size:12px;border:1.5px solid ${p ? 'var(--g2)' : 'var(--line)'};border-radius:12px;padding:6px 0;background:linear-gradient(to top,${p === 100 ? 'var(--g2)' : 'var(--g3)'} ${p}%,#fff ${p}%);color:${p === 100 ? '#fff' : 'var(--ink)'}"><b>${i + 1}</b><br><small>${p}%</small></div>`).join('')}</div>
     <p class="hint">اللون الممتلئ = الجزء محفوظ بالكامل</p></div>
   ${lastH ? `<div class="card"><h3>📍 آخر موضع ${cur ? 'قراءة' : 'حفظ'}</h3><div style="font-family:Amiri,serif;font-size:21px;color:var(--g1);font-weight:700">${recText(lastH)}</div></div>` : ''}
+  ${ijCard(s)}
   ${(() => { const cs = db.certs.filter(c => c.studentId === s.id), ready = staff() && memorized(s.id, '', true).reduce((x, y) => x + y, 0) === Q.TOTAL && !cs.some(c => c.kind === 'khatm'), doneEnr = staff() ? enrOf(s.id).filter(e => e.status === 'completed' && !cs.some(c => c.enrollmentId === e.id)) : [];
     return `<div class="card"><h3>🏆 الشهادات (${cs.length}) ${staff() ? `<button class="more" data-act="cert-new" data-id="${s.id}">＋ إصدار شهادة</button>` : ''}</h3>
     ${ready ? '<div class="info" style="margin-bottom:10px">🎉 أتمّ حفظ المصحف كاملاً — يمكنك إصدار شهادة الختم</div>' : ''}
@@ -910,13 +912,14 @@ function render() {
   if (!st.ready) { $('#app').innerHTML = `<div class="auth"><div class="brand">${logoImg()}<h1>${esc(platformBrand().name)}</h1><p>جارٍ التحميل...</p></div></div>`; return; }
   if (st.view === 'verify') return renderVerify();
   if (!db.me) { if (st.view === 'about') return renderAbout(); if (st.view === 'feedback') return renderFeedback(); if (st.view === 'signup') { renderSignup(); suToggle((($('#su_role') || {}).value) || 'solo'); return; } return renderLogin(); }
-  const views = { about: viewAbout, home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, search: viewSearch, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
-  if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings'].includes(st.view)) st.view = 'home';
+  const views = { about: viewAbout, home: viewHome, add: viewAdd, students: viewStudents, student: viewStudent, stats: viewStats, search: viewSearch, settings: viewSettings, report: viewReport, monthly: viewMonthly, cert: viewCert, ijaza: viewIjaza, ijtpls: viewIjTpls, ijtpl: viewIjTpl, statement: viewStatement, messages: viewMessages, manage: viewManage, account: accountView };
+  if (!staff() && ['add', 'students', 'manage', 'monthly', 'settings', 'ijtpls', 'ijtpl'].includes(st.view)) st.view = 'home';
   if (!isMgr() && st.view === 'manage') st.view = 'account';
   shell(views[st.view]());
   saveNav();
   if (st.view === 'add') updateInfo();
   if (['report', 'monthly', 'cert', 'statement'].includes(st.view)) fitReport();
+  if (st.view === 'ijaza') ijPost();
   { const c = $('#mtabs .chip.on'); if (c) c.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   if (st.view === 'manage' && isAdmin()) loadAdminTab();
   if (st.view === 'search') { const q = $('#sq'); if (q && document.activeElement !== q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
@@ -970,6 +973,7 @@ const acts = {
     const t = document.title, v = st.view, sty = document.createElement('style');
     document.title = v === 'statement' ? `كشف التسميع - ${(student(st.sid) || {}).name}` : v === 'monthly' ? `الكشف الشهري - ${monthRange(st.mo).label}` : v === 'cert' ? `شهادة ${(db.certs.find(c => c.id === st.cid) || {}).student || ''}` : `تقرير ${student(st.sid).name} - ${monthRange(st.ro).label}`;
     if (v === 'statement') { sty.textContent = '@page{size:A4;margin:10mm 0 16mm;@bottom-center{content:"صفحة " counter(page) " من " counter(pages);font:11px Tahoma,sans-serif;color:#6b7d75}}.rpt.flow{min-height:0!important}'; document.head.appendChild(sty); }
+    if (v === 'ijaza') { sty.textContent = '@page{size:A4;margin:0}'; document.head.appendChild(sty); }
     if (v === 'cert') { sty.textContent = '@page{size:A4 landscape;margin:0}'; document.head.appendChild(sty); }
     window.print(); setTimeout(() => { document.title = t; sty.remove(); }, 800);
   },
@@ -1130,7 +1134,8 @@ document.addEventListener('submit', run(async e => {
     st.signupDone = true; render(); return;
   }
   if (f.id === 'certform') {
-    const r = await api('cert_issue', { studentId: +f.dataset.sid, kind: f.kind.value, title: f.title.value, enrollmentId: f.enr ? +f.enr.value : null,
+    const sid0 = +f.dataset.sid, k0 = f.kind.value, scope = ['hifz', 'review'].includes(k0) ? certScope(sid0, k0, f.pf.value, f.pt.value) : '';
+    const r = await api('cert_issue', { studentId: sid0, kind: k0, label: scope, title: f.title.value, enrollmentId: f.enr ? +f.enr.value : null,
       period_from: f.pf.value || null, period_to: f.pt.value || null, grade: f.grade.value, note: f.note.value, date: f.date.value });
     db.certs.unshift(r.cert); closeModal(); go('cert', { cid: r.cert.id }); toast('تم إصدار الشهادة ✔'); return;
   }
@@ -1194,7 +1199,7 @@ document.addEventListener('change', run(async e => {
   if (t.id === 'rlmode') { st.rlmode = t.value; const l = $('#reclist'); if (l) l.innerHTML = recListHtml(st.form); return; }
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
-  if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
+  if (t.id === 'cf_kind') { $('#cf_period').style.display = ['period', 'hifz', 'review'].includes(t.value) ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }
   if (t.id === 'en_kind') { $('#en_riwaya').style.display = t.value === 'riwaya' ? '' : 'none'; $('#en_qiraa').style.display = t.value === 'qiraa' ? '' : 'none'; $('#en_jam').style.display = t.value === 'jam' ? '' : 'none'; }
   if (t.id === 'st_program') { if (t.value === 'qiraat') $('#st_hafiz').checked = true; const hr = $('#st_hr_row'); if (hr) hr.hidden = t.value !== 'qiraat'; }
   if (t.id === 'mschool') { st.mschool = t.value; render(); }

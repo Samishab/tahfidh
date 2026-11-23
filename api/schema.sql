@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS certificates (
   student_id INT UNSIGNED NOT NULL,
   student_name VARCHAR(120) NOT NULL,
   school_name VARCHAR(120) NOT NULL DEFAULT '',
-  kind ENUM('khatm','period','custom','qiraat') NOT NULL,
+  kind ENUM('khatm','period','custom','qiraat','hifz','review') NOT NULL,
   title VARCHAR(160) NOT NULL,
   riwaya VARCHAR(20) NOT NULL DEFAULT 'hafs',
   enrollment_id INT UNSIGNED NULL,
@@ -226,4 +226,32 @@ CREATE TABLE IF NOT EXISTS audit_log (
   ip VARCHAR(45) NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_audit_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ijaza_tpl (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  school_id INT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  data MEDIUMTEXT NOT NULL,
+  updated_by INT UNSIGNED NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_ijt_school (school_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ijazat (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  serial VARCHAR(24) NOT NULL,
+  school_id INT UNSIGNED NOT NULL,
+  student_id INT UNSIGNED NOT NULL,
+  tpl_id INT UNSIGNED NULL,
+  kind ENUM('full','short') NOT NULL DEFAULT 'full',
+  student_name VARCHAR(160) NOT NULL DEFAULT '',
+  title VARCHAR(200) NOT NULL DEFAULT '',
+  data MEDIUMTEXT NOT NULL,
+  issued_at DATE NOT NULL,
+  issued_by INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ij_serial (serial),
+  KEY idx_ij_student (student_id),
+  KEY idx_ij_school (school_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
