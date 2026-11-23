@@ -512,3 +512,23 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 @font-face{font-family:'IJ ThuluthB';src:url(fonts/thuluth_ijaza.ttf)}
 .ij-h,.ij-nm,.cv-nm b,.ij-signame,.ij-big,.ij-bism,.cv-ring span,.ij-sh h2,.cv-sh h2,.ij-spf b{font-family:'IJ Thuluth','IJ Manal','Aref Ruqaa',serif}
 .ij-h{font-size:24px}
+
+.ijbook.land{width:1123px}.ijl{width:1123px;height:794px}
+.ijl .ij-bx{margin:46px 30px 40px;font-size:17px}
+.ij-sp.land{font-size:17px;gap:2px;justify-content:flex-start}
+.ij-sp.land .ij-sphd{display:flex;flex-direction:column;align-items:center;gap:0;width:100%}
+.ij-sp.land .ij-bsimg{height:3em;width:auto;margin:0}
+.ij-sp.land .ij-ttimg{height:3.6em;width:auto;max-width:90%;margin:0}
+.ij-sp.land .ij-big.sm{font-size:2.1em;margin:0}.ij-sp.land .ij-bism.sm{font-size:1.7em}
+.ij-sp.land .ij-sptxt{width:100%;text-align:justify;text-align-last:center;line-height:1.85;margin-top:2px}
+.ij-spnm{margin-top:2px}.ij-spnm .ij-lab{font-size:.9em;margin:0 6px 0 0}.ij-spnm .ij-nm{font-size:1.6em}
+.ij-sprd{font-size:1.05em;font-weight:700;color:#c4161c}.ij-sprd i{font-style:normal;color:var(--ia)}
+.ij-splab{margin-top:2px}
+.ij-chainh{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:3px 0;width:100%}
+.ij-chainh span{border:1.5px solid var(--ia);border-radius:8px;padding:0 9px;background:linear-gradient(#fff,var(--il));font-weight:700;font-size:.8em;line-height:1.7}
+.ij-chainh i{font-style:normal;color:var(--ia);font-size:.85em;padding:0 3px}
+.ij-sp.land .ij-spf{display:flex;justify-content:space-between;align-items:flex-end;width:100%;margin-top:auto;padding-top:6px}
+.ij-spf .ij-spd{display:flex;flex-direction:column;gap:2px;text-align:start}.ij-spf .ij-spd small{font-size:.8em}
+.ij-spf .ij-sps{text-align:center}.ij-spf .ij-sps b{display:block;font-size:1.5em}.ij-spf .ij-sps em{display:block;font-style:normal;color:#c4161c;font-size:.75em}.ij-spf .ij-sps small{font-size:.75em;color:#555}
+@media print{.ijbook.land{width:297mm!important}.ijl{width:297mm!important;height:210mm!important}}
+.ij-sp.land{font-size:22px}

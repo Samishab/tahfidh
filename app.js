@@ -973,7 +973,7 @@ const acts = {
     const t = document.title, v = st.view, sty = document.createElement('style');
     document.title = v === 'statement' ? `كشف التسميع - ${(student(st.sid) || {}).name}` : v === 'monthly' ? `الكشف الشهري - ${monthRange(st.mo).label}` : v === 'cert' ? `شهادة ${(db.certs.find(c => c.id === st.cid) || {}).student || ''}` : `تقرير ${student(st.sid).name} - ${monthRange(st.ro).label}`;
     if (v === 'statement') { sty.textContent = '@page{size:A4;margin:10mm 0 16mm;@bottom-center{content:"صفحة " counter(page) " من " counter(pages);font:11px Tahoma,sans-serif;color:#6b7d75}}.rpt.flow{min-height:0!important}'; document.head.appendChild(sty); }
-    if (v === 'ijaza') { sty.textContent = '@page{size:A4;margin:0}'; document.head.appendChild(sty); }
+    if (v === 'ijaza') { sty.textContent = document.querySelector('.ijl') ? '@page{size:A4 landscape;margin:0}' : '@page{size:A4;margin:0}'; document.head.appendChild(sty); }
     if (v === 'cert') { sty.textContent = '@page{size:A4 landscape;margin:0}'; document.head.appendChild(sty); }
     window.print(); setTimeout(() => { document.title = t; sty.remove(); }, 800);
   },

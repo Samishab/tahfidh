@@ -207,26 +207,33 @@ function ijTree(book, T, V, vars) {
   ijShrink(page.querySelector('.ij-bx'), page.querySelector('.ij-tr'), 'tr');
 }
 /** يصغّر الخط والمسافات حتى يتسع المحتوى في صفحة واحدة */
-function ijShrink(bx, el, kind) {
+function ijShrink(bx, el, kind, b0) {
   let k = 1;
-  const base = kind === 'tr' ? 15 : 14;
+  const base = kind === 'tr' ? 15 : (b0 || 14);
   const m = kind === 'tr' ? bx : el, pad = kind === 'tr' ? 24 : -1;
   const over = () => kind === 'tr' ? el.offsetHeight > m.clientHeight - 24 : m.scrollHeight > m.clientHeight + 1;
   for (let i = 0; i < 80 && over() && k > .25; i++) { k -= .02; el.style.setProperty('--k', k.toFixed(2)); el.style.fontSize = (base * k).toFixed(1) + 'px'; }
 }
 function ijShortPage(book, T, V, vars) {
   const chain = String(T.shortChain || '').split('\n').map(x => x.trim()).filter(Boolean);
-  const page = ijPage(book, T, `<div class="ij-sp"><div class="ij-bism sm">بسم الله الرحمن الرحيم</div><h1 class="ij-big sm">${esc(T.coverTitle || 'إجازة')}</h1>
-    <div class="ij-lab">المجاز</div><div class="ij-nm">${esc(vars.honor)}: ${esc(vars.name)}</div>${ijReadLines(T, V)}
+  const rd = (vars.reading || '').split(' — ').filter(Boolean);
+  const wit = s => String(s || '').split('|')[0].trim();
+  const wl = [wit(T.wit1), wit(T.wit2)].filter(Boolean);
+  const page = ijPage(book, T, `<div class="ij-sp land">
+    <div class="ij-sphd">${T.bismImg ? `<img class="ij-bsimg" src="${esc(T.bismImg)}" alt="">` : '<div class="ij-bism sm">بسم الله الرحمن الرحيم</div>'}
+      ${T.titleImg ? `<img class="ij-ttimg" src="${esc(T.titleImg)}" alt="">` : `<h1 class="ij-big sm">${esc(T.coverTitle || 'إجازة')}</h1>`}</div>
     <div class="ij-sptxt">${ijBlocks(T.shortText, vars).join('')}</div>
-    ${chain.length ? `<div class="ij-lab">السند</div><div class="ij-chain">${chain.map(c => `<span>${ijInline(c, vars)}</span>`).join('<i></i>')}</div>` : ''}
-    <div class="ij-spf"><div><b>${esc(T.shName)}</b><em>${esc(T.shTitle)}</em><small>${esc(vars.day)} ${esc(vars.date)}م — ${esc(vars.hijri)}</small></div>${ijSealHtml(T, 'sm')}</div></div>`, { nonum: true });
-  ijShrink(page.querySelector('.ij-bx'), page.querySelector('.ij-sp'), 'sp');
+    <div class="ij-spnm"><span class="ij-lab">للأخ المجاز /</span> <b class="ij-nm">${esc(vars.honor)}: ${esc(vars.name)}</b></div>
+    ${rd.length ? `<div class="ij-sprd">${rd.map(x => esc(x)).join(' <i>•</i> ')}</div>` : ''}
+    ${chain.length ? `<div class="ij-lab ij-splab">السند</div><div class="ij-chainh">${chain.map(c => `<span>${ijInline(c, vars)}</span>`).join('<i>←</i>')}</div>` : ''}
+    <div class="ij-spf"><div class="ij-spd"><small>${esc(vars.day)} ${esc(vars.date)}م — ${esc(vars.hijri)}</small>${wl.length ? `<small>الشاهدان: ${wl.map(esc).join(' • ')}</small>` : ''}</div>
+      <div class="ij-sps"><small>الشيخ المجيز</small><b>${esc(T.shName)}</b><em>${esc(T.shTitle)}</em></div>${ijSealHtml(T, 'sm')}</div></div>`, { nonum: true, cls: 'ijl' });
+  ijShrink(page.querySelector('.ij-bx'), page.querySelector('.ij-sp'), 'sp', 22);
 }
 
 /** يبني الكتاب كاملاً داخل #ijbook */
 function ijBuild(book, T, V) {
-  book.innerHTML = ''; IJ_CUR = T;
+  book.innerHTML = ''; IJ_CUR = T; book.classList.toggle('land', (V.kind || 'full') === 'short');
   const vars = ijVars(V, T), inc = T.inc || {};
   if ((V.kind || 'full') === 'short') { ijShortPage(book, T, V, vars); return; }
   if (inc.cover) ijCover(book, T, vars);
@@ -267,7 +274,7 @@ function ijPost() {
 function ijFit() {
   const w = $('#ijwrap'), b = $('#ijbook'); if (!w || !b) return;
   b.style.transform = 'none'; w.style.height = 'auto';
-  const k = Math.min(1, w.clientWidth / 794), h = b.scrollHeight;
+  const W = b.classList.contains('land') ? 1123 : 794, k = Math.min(1, w.clientWidth / W), h = b.scrollHeight;
   b.style.transformOrigin = 'top right'; b.style.transform = `scale(${k})`; w.style.height = Math.ceil(h * k) + 'px';
 }
 addEventListener('resize', () => { if (st.view === 'ijaza') ijFit(); });
