@@ -440,8 +440,22 @@ ${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-sel
   <div id="reclist">${recListHtml(f)}</div>`;
 }
 const dateBanner = f => f.date && f.date !== today() ? `<div class="info sm" style="text-align:start">📅 تسجّل بتاريخ <b>${fmtDMY(parse(f.date))}</b> <button type="button" class="btn light sm" data-act="date-today">↩ العودة إلى اليوم</button></div>` : '';
-const recListHtml = f => f.date && st.fixed && f.sid && !f.id ? (() => { const mine = db.records.filter(r => r.studentId === +f.sid), ym = String(f.date).slice(0, 7), inM = mine.filter(r => r.date.slice(0, 7) === ym), base = inM.length ? inM : mine.slice().sort(recSort).slice(0, 5), newest = mine.slice().sort((x, y) => y.id - x.id)[0], rc = newest && !base.some(r => r.id === newest.id) ? base.concat(newest) : base, mname = parse(f.date).toLocaleDateString(L, { month: 'long', year: 'numeric' });
-    return rc.length ? `<div class="card"><h3>🕘 ${inM.length ? `تسميعات ${mname} (${inM.length})` : 'آخر تسميعاته'}</h3>${newest && !base.some(r => r.id === newest.id) ? '<p class="hint" style="margin:0 0 6px">الصف الأصفر: آخر ما أدخلته (تاريخه خارج هذا الشهر)</p>' : ''}${recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id })}</div>` : ''; })() : '';
+const RL_MODES = [['month', '📅 الشهر'], ['week', '🗓 الأسبوع'], ['day', '📌 اليوم'], ['last5', '🔢 آخر 5'], ['last10', '🔢 آخر 10'], ['all', '♾ الكل']];
+function recListHtml(f) {
+  if (!f.date || !st.fixed || !f.sid || f.id) return '';
+  const mode = st.rlmode || 'month', mine = db.records.filter(r => r.studentId === +f.sid), d0 = parse(f.date);
+  let base, label;
+  if (mode === 'week') { const ws = weekStart(d0), a0 = ymd(ws), b0 = ymd(addDays(ws, 6)); base = mine.filter(r => r.date >= a0 && r.date <= b0); label = `${fmtS(ws)} – ${fmtS(addDays(ws, 6))}`; }
+  else if (mode === 'day') { base = mine.filter(r => r.date === f.date); label = dmy(d0); }
+  else if (mode === 'last5' || mode === 'last10') { base = mine.slice().sort(recSort).slice(0, mode === 'last5' ? 5 : 10); label = 'الأحدث بالتاريخ'; }
+  else if (mode === 'all') { base = mine; label = 'كل التسميعات'; }
+  else { const ym = String(f.date).slice(0, 7); base = mine.filter(r => r.date.slice(0, 7) === ym); label = d0.toLocaleDateString(L, { month: 'long', year: 'numeric' }); }
+  const newest = mine.slice().sort((x, y) => y.id - x.id)[0], out = newest && !base.some(r => r.id === newest.id), rc = out ? base.concat(newest) : base;
+  const sel = `<select id="rlmode" class="rl-sel" title="نطاق العرض">${RL_MODES.map(([k, l]) => `<option value="${k}" ${k === mode ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  return `<div class="card"><h3 class="rl-h">🕘 التسميعات ${sel}<small class="hint">${esc(label)} • ${base.length}</small></h3>
+    ${out ? '<p class="hint" style="margin:0 0 6px">الصف الأصفر: آخر ما أدخلته (خارج النطاق المعروض)</p>' : ''}
+    ${rc.length ? recTable(rc, { filter: false, noTrim: true, hl: newest && newest.id }) : empty('📖', 'لا يوجد تسميع في هذا النطاق')}</div>`;
+}
 function checkForm() {
   const f = st.form, s = +f.surah, s2 = +(f.surahTo || f.surah), a = +f.from, b = +f.to;
   if (!f.from || !f.to) return { ok: false, msg: `أدخل رقم الآية — سورة ${Q.name(s)} فيها ${Q.count(s)} آية` };
@@ -1176,6 +1190,7 @@ document.addEventListener('submit', run(async e => {
 
 document.addEventListener('change', run(async e => {
   const t = e.target;
+  if (t.id === 'rlmode') { st.rlmode = t.value; const l = $('#reclist'); if (l) l.innerHTML = recListHtml(st.form); return; }
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }
   if (t.id === 'cf_kind') { $('#cf_period').style.display = t.value === 'period' ? '' : 'none'; $('#cf_enr').style.display = t.value === 'qiraat' ? '' : 'none'; $('#cf_title').placeholder = certDefaultTitle(t.value); }

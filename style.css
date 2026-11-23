@@ -409,3 +409,6 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .dn-det[open]>summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .dn .nt{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dn-det .info{margin-bottom:12px}
+
+.rl-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rl-h small{margin-inline-start:auto}
+.rl-sel{width:auto;padding:5px 10px;border-radius:10px;font-size:14px;font-weight:700;border:1.5px solid var(--line);background:#fff}
