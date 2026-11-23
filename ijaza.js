@@ -336,9 +336,10 @@ Object.assign(acts, {
   'ij-tpl-edit': id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; st.ije = { target: 'tpl', id: t.id, name: t.name, T: { ...ijDefault(), ...t.data, inc: { ...ijDefault().inc, ...(t.data.inc || {}) } } }; go('ijtpl'); },
   'ij-tpl-marghani': async () => {
     if (typeof IJ_MARGHANI === 'undefined') return toast('ملف النموذج غير محمّل');
-    if (!confirm('إضافة نموذج «إجازة يعقوب — المرغني» جاهزاً بكل بياناته؟ (يمكنك تعديله بعدها)')) return;
+    const old = IJ.tpls.find(t => t.name === IJ_MARGHANI.name);
+    if (!confirm(old ? 'النموذج موجود؛ هل تستبدل محتواه بالنسخة الجاهزة (تضيع تعديلاتك عليه)؟' : 'إضافة نموذج «إجازة يعقوب — المرغني» جاهزاً بكل بياناته؟ (يمكنك تعديله بعدها)')) return;
     const d = { ...ijDefault(), ...IJ_MARGHANI.data }; d.muq = IJ_MUQ + String.fromCharCode(10, 10) + (d.muqExtra || ''); delete d.muqExtra;
-    const r = await api('ijaza_tpl_save', { id: 0, name: IJ_MARGHANI.name, data: d }); IJ.tpls.push(r.tpl); toast('تمت إضافة النموذج ✔'); render();
+    const r = await api('ijaza_tpl_save', { id: old ? old.id : 0, name: IJ_MARGHANI.name, data: d }); if (old) Object.assign(old, r.tpl); else IJ.tpls.push(r.tpl); toast('تمت إضافة النموذج ✔'); render();
   },
   'ij-tpl-copy': async id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; const r = await api('ijaza_tpl_save', { id: 0, name: t.name + ' (نسخة)', data: t.data }); IJ.tpls.push(r.tpl); toast('تم النسخ'); render(); },
   'ij-tpl-del': async id => { if (!confirm('حذف هذا النموذج؟ الإجازات الصادرة منه تبقى كما هي.')) return; await api('ijaza_tpl_delete', { id: +id }); IJ.tpls = IJ.tpls.filter(t => t.id !== +id); render(); },
