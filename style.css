@@ -414,3 +414,7 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .rl-sel{width:auto;padding:5px 10px;border-radius:10px;font-size:14px;font-weight:700;border:1.5px solid var(--line);background:#fff}
 
 .rp-tbl .oneln td:first-child,.rp-tbl .oneln th:first-child{text-align:start}
+
+.rp-tbl .oneln td,.rp-tbl .oneln th,.rt2 td,.rt2 th{text-align:start!important}
+.an{font-weight:400;font-size:.78em;color:#6b7d75}
+.oneln thead{display:table-header-group}.oneln tr{break-inside:avoid}.oneln .ttl th{background:none;border:0;padding:0 0 6px}.oneln .ttl h3{margin:0}

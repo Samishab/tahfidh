@@ -102,10 +102,11 @@ function rptTables(recs) {
   const sm = [cnt(r => r.type === 'hifz', 'حفظ'), cnt(r => r.type === 'review', 'مراجعة'), cnt(r => r.type === 'qiraa', 'قراءة')].filter(Boolean).join(' • ');
   const hasG = recs.some(x => x.type !== 'qiraa' && x.grade), hasQ = recs.some(x => x.type === 'qiraa' && x.enrollmentId);
   const ss = st.ss || { k: 'date', d: 1 }, rows = sortRecs(recs, ss), H = (k, l) => sortHead('ssort', k, l, ss);
-  return `<div class="rp-box rp-tbl"><h3>📋 سجل التسميع <span>${recs.length} تسميع${sm ? ' — ' + sm : ''}</span></h3>
-    <table class="oneln"><tr>${H('date', 'اليوم')}${H('type', 'النوع')}${hasQ ? H('reading', 'القراءة') : ''}${H('range', 'السورة والآيات')}${H('ayahs', 'آيات')}${H('juz', 'الجزء')}${hasG ? H('grade', 'التقدير') : ''}</tr>
-    ${rows.map(r => { const d = parse(r.date), en = r.enrollmentId ? enrById(r.enrollmentId) : null; return `<tr><td style="text-align:start">${fmtDMY(d)}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em>${r.redo ? ' <small>↺</small>' : ''}</td>${hasQ ? `<td>${en ? esc(en.label) : ''}</td>` : ''}
-      <td style="text-align:start"><b>${rngName(r)}</b></td><td>${ayahs(r)}</td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td>${r.type === 'qiraa' ? '' : (r.grade || '—')}</td>` : ''}</tr>`; }).join('')}</table></div>`;
+  const cols = 3 + (hasQ ? 1 : 0) + (hasG ? 1 : 0) + 1;
+  return `<div class="rp-box rp-tbl"><table class="oneln"><thead><tr class="ttl"><th colspan="${cols}" style="text-align:start"><h3>📋 سجل التسميع <span>${recs.length} تسميع${sm ? ' — ' + sm : ''}</span></h3></th></tr>
+    <tr>${H('date', 'اليوم')}${H('type', 'النوع')}${hasQ ? H('reading', 'القراءة') : ''}${H('range', 'السورة والآيات')}${H('ayahs', 'آيات')}${H('juz', 'الجزء')}${hasG ? H('grade', 'التقدير') : ''}</tr></thead><tbody>
+    ${rows.map(r => { const d = parse(r.date), en = r.enrollmentId ? enrById(r.enrollmentId) : null; return `<tr><td>${fmtDMY(d)}</td><td><em class="${typeCls(r)}">${typeAr(r)}</em>${r.redo ? ' <small>↺</small>' : ''}</td>${hasQ ? `<td>${en ? esc(en.label) : ''}</td>` : ''}
+      <td><b>${rngName(r)}</b></td><td>${ayahs(r)}</td><td>${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td>${r.type === 'qiraa' ? '' : (r.grade || '—')}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>`;
 }
 function viewReport() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();

@@ -48,7 +48,7 @@ const weekStart = d => addDays(d, -((d.getDay() - WS + 7) % 7));
 const L = 'ar-u-nu-latn';
 const fmtDay = d => d.toLocaleDateString(L, { weekday: 'long' });
 const fmtG = d => d.toLocaleDateString(L, { day: 'numeric', month: 'long', year: 'numeric' });
-const dmy = d => `<bdi dir="ltr">${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}</bdi>`;
+const dmy = d => `<bdi dir="rtl">${pad(d.getDate())}‏/‏${pad(d.getMonth() + 1)}‏/‏${d.getFullYear()}</bdi>`;
 const fmtDMY = d => `${fmtDay(d)} | ${dmy(d)}`;
 const fmtS = d => d.toLocaleDateString(L, { day: 'numeric', month: 'short' });
 const fmtH = d => d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -61,7 +61,7 @@ const st = { view: 'home', ready: false, sid: null, mode: 'week', off: 0, q: '',
 
 const rEnd = r => r.surahTo || r.surah;                                    // سورة نهاية التسميع
 const ayahs = r => Q.abs(rEnd(r), r.to) - Q.abs(r.surah, r.from) + 1;      // عدد الآيات ولو امتد عدة سور
-const rngName = r => rEnd(r) !== r.surah ? `${Q.name(r.surah)} ${r.from} ← ${Q.name(rEnd(r))} ${r.to}` : `${Q.name(r.surah)} ${r.from}–${r.to}`;
+const rngName = r => rEnd(r) !== r.surah ? `${Q.name(r.surah)} <small class="an">${r.from}</small> ← ${Q.name(rEnd(r))} <small class="an">${r.to}</small>` : `${Q.name(r.surah)} <small class="an">${r.from}–${r.to}</small>`;
 const inRange = (a, b) => db.records.filter(r => r.date >= a && r.date <= b);
 function agg(recs) {
   const o = { h: 0, r: 0, q: 0, n: recs.length, days: new Set(), students: new Set() };
@@ -969,6 +969,7 @@ const acts = {
   print: () => {
     const t = document.title, v = st.view, sty = document.createElement('style');
     document.title = v === 'statement' ? `كشف التسميع - ${(student(st.sid) || {}).name}` : v === 'monthly' ? `الكشف الشهري - ${monthRange(st.mo).label}` : v === 'cert' ? `شهادة ${(db.certs.find(c => c.id === st.cid) || {}).student || ''}` : `تقرير ${student(st.sid).name} - ${monthRange(st.ro).label}`;
+    if (v === 'statement') { sty.textContent = '@page{size:A4;margin:10mm 0 16mm;@bottom-center{content:"صفحة " counter(page) " من " counter(pages);font:11px Tahoma,sans-serif;color:#6b7d75}}.rpt.flow{min-height:0!important}'; document.head.appendChild(sty); }
     if (v === 'cert') { sty.textContent = '@page{size:A4 landscape;margin:0}'; document.head.appendChild(sty); }
     window.print(); setTimeout(() => { document.title = t; sty.remove(); }, 800);
   },
