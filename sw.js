@@ -1,4 +1,4 @@
-const CACHE = 'tahfidh-v58';
+const CACHE = 'tahfidh-v59';
 const ASSETS = ['./', 'index.html', 'style.css', 'quran.js', 'app.js', 'report.js', 'extras.js', 'admin.js', 'ijaza.js', 'ijaza_marghani.js', 'icon.svg', 'manifest.json'];
 
 self.addEventListener('install', e => {

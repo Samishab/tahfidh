@@ -158,7 +158,7 @@ function ijCover(book, T, vars) {
   p.className = 'ijp ijcover'; p.style.cssText = `--ip:${t.p};--is:${t.s};--ia:${t.a};--il:${t.l};--ik:${t.ink};background-image:${ijTile(T.theme)}`;
   p.innerHTML = `<div class="ij-in cv"><div class="cv-med"><div class="cv-ring"><span>${esc(T.coverTitle || 'إجازة')}</span></div></div>
     <div class="cv-rd">${esc((vars.reading || '').split(' — ')[0] || '')}</div>
-    <div class="cv-sh">${ijOrn(T.theme)}<small>${esc(T.shTitle)}</small><h2>${esc(T.shName)}</h2><em>${esc(T.shDesc)}</em></div>
+    <div class="cv-sh">${T.nameImg ? `<img class="ij-nmimg cv" src="${esc(T.nameImg)}" alt="">` : `${ijOrn(T.theme)}<small>${esc(T.shTitle)}</small><h2>${esc(T.shName)}</h2><em>${esc(T.shDesc)}</em>`}</div>
     <div class="cv-nm"><small>المجاز</small><b>${esc(vars.honor)}: ${esc(vars.name)}</b></div></div>
     <span class="ij-c c1">${ijRose(T.theme)}</span><span class="ij-c c2">${ijRose(T.theme)}</span><span class="ij-c c3">${ijRose(T.theme)}</span><span class="ij-c c4">${ijRose(T.theme)}</span>`;
   book.appendChild(p);
@@ -167,9 +167,9 @@ const ijReadLines = (T, V) => (V.reading || T.reading || '').split('\n').map(x =
 const ijSealHtml = (T, cls = '') => T.sealImg ? `<img class="ij-seal ${cls}" src="${esc(T.sealImg)}" alt="">` : `<div class="ij-seal ij-seal0 ${cls}"><span>${esc(T.shName || '')}</span></div>`;
 function ijTitlePage(book, T, V, vars) {
   ijPage(book, T, `<div class="ij-tp"><div class="ij-bism">بسم الله الرحمن الرحيم</div><div class="ij-verse">${esc(T.verse)}</div>
-    <h1 class="ij-big">${esc(T.coverTitle)}</h1>${ijReadLines(T, V)}
+    ${T.titleImg ? `<img class="ij-ttimg" src="${esc(T.titleImg)}" alt="">` : `<h1 class="ij-big">${esc(T.coverTitle)}</h1>`}${ijReadLines(T, V)}
     <div class="ij-lab">${esc('الشيخ المقرئ المجيز')}</div>${T.photo ? `<img class="ij-ph" src="${esc(T.photo)}" alt="">` : ''}
-    <div class="ij-sh">${ijOrn(T.theme)}<small>${esc(T.shTitle)}</small><h2>${esc(T.shName)}</h2><em>${esc(T.shDesc)}</em></div>
+    <div class="ij-sh">${T.nameImg ? `<img class="ij-nmimg" src="${esc(T.nameImg)}" alt="">` : `${ijOrn(T.theme)}<small>${esc(T.shTitle)}</small><h2>${esc(T.shName)}</h2><em>${esc(T.shDesc)}</em>`}</div>
     <div class="ij-lab">المجاز</div><div class="ij-nm">${esc(vars.honor)}: ${esc(vars.name)}</div>${ijSealHtml(T)}</div>`);
 }
 function ijGrant(book, T, V, vars) {
@@ -251,7 +251,7 @@ addEventListener('resize', () => { if (st.view === 'ijaza') ijFit(); });
 
 /* ---------- محرر النموذج / نصوص الإجازة ---------- */
 const IJ_F = [
-  ['👤 بيانات الشيخ المجيز والشكل', [['shName', 'اسم الشيخ المجيز', 'in'], ['shTitle', 'صفة الشيخ (مثل: خادم القرآن الكريم)', 'in'], ['shDesc', 'وصف الشيخ (سطر تحت الاسم)', 'in'], ['hdr', 'نص شريط أعلى الصفحات (الافتراضي: اسم الشيخ)', 'in'], ['place', 'المكان الافتراضي (اختياري)', 'in'], ['theme', 'نمط الألوان', 'theme'], ['sealImg', 'ختم أو شعار الشيخ (صورة)', 'img'], ['photo', 'صورة الشيخ (اختياري)', 'img']]],
+  ['👤 بيانات الشيخ المجيز والشكل', [['shName', 'اسم الشيخ المجيز', 'in'], ['shTitle', 'صفة الشيخ (مثل: خادم القرآن الكريم)', 'in'], ['shDesc', 'وصف الشيخ (سطر تحت الاسم)', 'in'], ['hdr', 'نص شريط أعلى الصفحات (الافتراضي: اسم الشيخ)', 'in'], ['place', 'المكان الافتراضي (اختياري)', 'in'], ['theme', 'نمط الألوان', 'theme'], ['sealImg', 'ختم أو شعار الشيخ (صورة)', 'img'], ['photo', 'صورة الشيخ (اختياري)', 'img'], ['nameImg', 'لوحة اسم الشيخ بخط الثلث (صورة شفافة تحل محل اسمه ووصفه في الغلاف وصفحة العنوان)', 'img'], ['titleImg', 'لوحة عنوان الإجازة بخط الثلث (صورة شفافة، اختياري)', 'img']]],
   ['📖 القراءة المُجاز بها والغلاف', [['coverTitle', 'عنوان الإجازة', 'in'], ['verse', 'الآية أعلى صفحة العنوان', 'in'], ['reading', 'القراءة والرواة والطريق (كل سطر في سطر؛ الأول بالأسود والبقية بالأحمر)', 'ta', 4]]],
   ['✍️ المقدمة', [['muq', 'نص المقدمة', 'ta', 12]]],
   ['📜 نص الإجازة', [['body', 'نص الإجازة (يتعبأ اسم الطالب وقراءته تلقائياً)', 'ta', 16]]],
@@ -358,7 +358,7 @@ document.addEventListener('change', e => {
   if (t.dataset && t.dataset.ijimg) {   // ضغط الصورة وتحويلها إلى data URL صغير
     const k = t.dataset.ijimg, fl = t.files[0]; if (!fl) return;
     const im = new Image(), rd = new FileReader();
-    rd.onload = () => { im.onload = () => { const m = k === 'photo' ? 360 : 420, sc = Math.min(1, m / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); const url = c.toDataURL('image/png'); $('#ijtform').elements[k].value = url; const p = $('#ijimg_' + k); p.src = url; p.hidden = false; }; im.src = rd.result; };
+    rd.onload = () => { im.onload = () => { const m = k === 'photo' ? 360 : (k === 'nameImg' || k === 'titleImg') ? 1000 : 420, sc = Math.min(1, m / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); const url = c.toDataURL('image/png'); $('#ijtform').elements[k].value = url; const p = $('#ijimg_' + k); p.src = url; p.hidden = false; }; im.src = rd.result; };
     rd.readAsDataURL(fl);
   }
   if (t.name && t.name.startsWith('inc_')) { const l = t.closest('label'); if (l) l.classList.toggle('on', t.checked); }
