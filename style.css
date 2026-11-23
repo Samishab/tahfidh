@@ -532,3 +532,15 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 .ij-spf .ij-sps{text-align:center}.ij-spf .ij-sps b{display:block;font-size:1.5em}.ij-spf .ij-sps em{display:block;font-style:normal;color:#c4161c;font-size:.75em}.ij-spf .ij-sps small{font-size:.75em;color:#555}
 @media print{.ijbook.land{width:297mm!important}.ijl{width:297mm!important;height:210mm!important}}
 .ij-sp.land{font-size:22px}
+
+.ij-sp.land{font-size:20px}
+.ij-spmain{display:flex;gap:22px;width:100%;align-items:center;margin:4px 0}
+.ij-spl{flex:1.45;min-width:0}
+.ij-sptree{flex:1;min-width:0;display:flex;flex-direction:column;align-items:stretch}
+.ij-sptree .ij-lab{margin:0 0 2px;text-align:center}
+.ij-sptree .ij-tr{font-size:.78em;align-items:stretch}
+.ij-sptree .ij-trr span{padding:calc(2px*var(--k,1)) 6px;line-height:1.35}
+.ij-sptree .ij-ar{height:calc(6px*var(--k,1))}
+.ij-sptree .ij-ar:after{border-width:4px;bottom:-3px;left:-3px}
+.ij-sp.land .ij-sptxt{text-align:justify;text-align-last:start}
+.ij-spl .ij-spnm{text-align:center}.ij-spl .ij-sprd{text-align:center}
