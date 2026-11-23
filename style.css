@@ -412,3 +412,5 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 
 .rl-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rl-h small{margin-inline-start:auto}
 .rl-sel{width:auto;padding:5px 10px;border-radius:10px;font-size:14px;font-weight:700;border:1.5px solid var(--line);background:#fff}
+
+.rp-tbl .oneln td:first-child,.rp-tbl .oneln th:first-child{text-align:start}

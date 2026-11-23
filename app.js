@@ -48,7 +48,7 @@ const weekStart = d => addDays(d, -((d.getDay() - WS + 7) % 7));
 const L = 'ar-u-nu-latn';
 const fmtDay = d => d.toLocaleDateString(L, { weekday: 'long' });
 const fmtG = d => d.toLocaleDateString(L, { day: 'numeric', month: 'long', year: 'numeric' });
-const dmy = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+const dmy = d => `<bdi dir="ltr">${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}</bdi>`;
 const fmtDMY = d => `${fmtDay(d)} | ${dmy(d)}`;
 const fmtS = d => d.toLocaleDateString(L, { day: 'numeric', month: 'short' });
 const fmtH = d => d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -61,7 +61,7 @@ const st = { view: 'home', ready: false, sid: null, mode: 'week', off: 0, q: '',
 
 const rEnd = r => r.surahTo || r.surah;                                    // سورة نهاية التسميع
 const ayahs = r => Q.abs(rEnd(r), r.to) - Q.abs(r.surah, r.from) + 1;      // عدد الآيات ولو امتد عدة سور
-const rngName = r => rEnd(r) !== r.surah ? `${Q.name(r.surah)} ← ${Q.name(rEnd(r))}` : Q.name(r.surah);
+const rngName = r => rEnd(r) !== r.surah ? `${Q.name(r.surah)} ${r.from} ← ${Q.name(rEnd(r))} ${r.to}` : `${Q.name(r.surah)} ${r.from}–${r.to}`;
 const inRange = (a, b) => db.records.filter(r => r.date >= a && r.date <= b);
 function agg(recs) {
   const o = { h: 0, r: 0, q: 0, n: recs.length, days: new Set(), students: new Set() };
@@ -446,7 +446,7 @@ function recListHtml(f) {
   const mode = st.rlmode || 'month', mine = db.records.filter(r => r.studentId === +f.sid), d0 = parse(f.date);
   let base, label;
   if (mode === 'week') { const ws = weekStart(d0), a0 = ymd(ws), b0 = ymd(addDays(ws, 6)); base = mine.filter(r => r.date >= a0 && r.date <= b0); label = `${fmtS(ws)} – ${fmtS(addDays(ws, 6))}`; }
-  else if (mode === 'day') { base = mine.filter(r => r.date === f.date); label = dmy(d0); }
+  else if (mode === 'day') { base = mine.filter(r => r.date === f.date); label = `${pad(d0.getDate())}/${pad(d0.getMonth() + 1)}/${d0.getFullYear()}`; }
   else if (mode === 'last5' || mode === 'last10') { base = mine.slice().sort(recSort).slice(0, mode === 'last5' ? 5 : 10); label = 'الأحدث بالتاريخ'; }
   else if (mode === 'all') { base = mine; label = 'كل التسميعات'; }
   else { const ym = String(f.date).slice(0, 7); base = mine.filter(r => r.date.slice(0, 7) === ym); label = d0.toLocaleDateString(L, { month: 'long', year: 'numeric' }); }
@@ -631,7 +631,7 @@ function recTable(recs, o = {}) {
     ${rows.map(r => { const d = parse(r.date), s = student(r.studentId), en = r.enrollmentId ? enrById(r.enrollmentId) : null;
       return `<tr class="${o.hl === r.id ? 'hl' : ''}"><td><span class="badge ${r.type === 'hifz' ? 'b-hifz' : r.type === 'qiraa' ? 'b-rw' : 'b-rev'}"><span class="bi">${{ hifz: '📖', review: '🔁', qiraa: '📚' }[r.type]}</span><span class="bt"> ${typeAr(r)}</span></span>${r.redo ? ' <small title="إعادة">↺</small>' : ''}</td>
       ${o.who ? `<td>${s ? esc(s.name) : ''}</td>` : ''}${hasQ ? `<td class="hm">${en ? esc(en.label) : ''}</td>` : ''}
-      <td style="text-align:start"><b>${rngName(r)}</b> <small>${r.from}–${r.to}</small><small class="mo"> • ${ayahs(r)} آية</small></td><td class="hm">${ayahs(r)}</td>
+      <td style="text-align:start"><b>${rngName(r)}</b><small class="mo"> • ${ayahs(r)} آية</small></td><td class="hm">${ayahs(r)}</td>
       <td>${fmtDMY(d)}</td><td class="hm">${Q.juz(r.surah, r.from, r.to, rEnd(r)).join('–')}</td>${hasG ? `<td class="hm">${r.type === 'qiraa' ? '<span class="hint">—</span>' : gradeBadge(r)}</td>` : ''}
       <td class="hm nt" style="text-align:start" title="${esc(r.note)}">${r.note ? esc(r.note) : ''}</td>
       <td class="ra"><button class="ib" data-act="rec-view" data-id="${r.id}" title="عرض">👁</button>${sf ? `<button class="ib" data-act="edit-rec" data-id="${r.id}" title="تعديل">✏️</button><button class="ib" data-act="del-rec" data-id="${r.id}" title="حذف">🗑</button>` : `<button class="ib" data-act="msg-rec" data-id="${r.id}" title="أرسل ملاحظة للمعلم">💬</button>`}</td></tr>`; }).join('')}</table></div>${filtered.length > cut.length && f === 'all' ? `<p class="hint" style="text-align:center">يعرض آخر ${cut.length} من ${filtered.length} تسميع</p>` : ''}`;
