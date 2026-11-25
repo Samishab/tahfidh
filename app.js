@@ -86,10 +86,17 @@ function nextPos(sid, type, enr, date) {
 // البرنامج الحالي للطالب: آخر ما سُمِّع له، وإلا ختمته الجارية إن كان حافظاً أو في برنامج القراءات
 function currentEnr(sid) {
   const act = activeEnr(sid), s = student(sid);
-  const last = db.records.filter(r => r.studentId === +sid).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0')))[0];
-  if (last) return last.type === 'qiraa' ? (act.some(e => e.id === last.enrollmentId) ? last.enrollmentId : (act[0] ? act[0].id : '')) : (s && s.program === 'qiraat' && act[0] ? act[0].id : '');
-  return s && act.length && (s.program === 'qiraat' || s.hafiz) ? act[act.length - 1].id : '';
+  const mine = db.records.filter(r => r.studentId === +sid).sort((a, b) => (b.date + String(b.id).padStart(9, '0')).localeCompare(a.date + String(a.id).padStart(9, '0')));
+  const last = mine[0], lastQ = mine.find(r => r.type === 'qiraa' && enrById(r.enrollmentId));
+  if (last && last.type === 'qiraa') return act.some(e => e.id === last.enrollmentId) ? last.enrollmentId : (act[0] ? act[0].id : (enrById(last.enrollmentId) ? last.enrollmentId : ''));
+  if (s && s.program === 'qiraat') return act[0] ? act[0].id : (lastQ ? lastQ.enrollmentId : '');
+  if (last) return '';
+  return s && act.length && s.hafiz ? act[act.length - 1].id : '';
 }
+// تسميعات برنامج الطالب الحالي (ختمة القراءة الجارية أو الحفظ والمراجعة)
+const progRecs = (sid, cur) => db.records.filter(r => r.studentId === +sid && (cur ? r.type === 'qiraa' && String(r.enrollmentId) === String(cur) : r.type !== 'qiraa'));
+// أحدث تاريخ تسميع في البرنامج الحالي (للفتح المباشر على آخر فترة فيها تسميع)
+const progLast = (sid, cur) => progRecs(sid, cur).map(r => r.date).sort().pop() || '';
 function curLine(s) {
   const e = currentEnr(s.id), l = lastOf(s.id, e ? 'qiraa' : 'hifz', e), en = e ? enrById(e) : null;
   return `${en ? '📚 ' + en.label : (s.program === 'qiraat' ? '📚 قراءات' : '📖 حفظ ومراجعة')}${l ? ' • وصل: ' + Q.name(rEnd(l)) + ' آية ' + l.to : ''}`;
@@ -564,7 +571,7 @@ function studentForm(s) {
 }
 function viewStudent() {
   const s = student(st.sid); if (!s) return staff() ? viewStudents() : viewKids();
-  const act = activeEnr(s.id), tabs = (s.program !== 'qiraat' || s.allowHr ? [{ k: '', l: '📖 حفظ ومراجعة' }] : []).concat(act.map(e => ({ k: String(e.id), l: '📚 ' + e.label })));
+  const act = activeEnr(s.id), cu0 = String(currentEnr(s.id)), shown = act.concat(cu0 && !act.some(e => String(e.id) === cu0) && enrById(cu0) ? [enrById(cu0)] : []), tabs = (s.program !== 'qiraat' || s.allowHr || !shown.length ? [{ k: '', l: '📖 حفظ ومراجعة' }] : []).concat(shown.map(e => ({ k: String(e.id), l: (e.status === 'completed' ? '✅ ' : '📚 ') + e.label })));
   const want = st.pe == null ? String(currentEnr(s.id)) : String(st.pe);
   const cur = tabs.some(x => x.k === want) ? want : (tabs[0] ? tabs[0].k : '');
   const m = memorized(s.id, cur), total = m.reduce((x, y) => x + y, 0), { w } = progressCard(s);
@@ -573,6 +580,7 @@ function viewStudent() {
     const a = Q.juzAbs[i], e = (Q.juzAbs[i + 1] || Q.TOTAL + 1) - 1; let c = 0;
     for (let k = a; k <= e; k++) c += m[k - 1]; return Math.round(c * 100 / (e - a + 1));
   });
+  const scoped = recs.filter(r => cur ? r.type === 'qiraa' && String(r.enrollmentId) === cur : r.type !== 'qiraa');
   const lastH = lastOf(s.id, cur ? 'qiraa' : 'hifz', cur), t = tObj(s), un = unread(s.id);
   const back = staff() ? 'students' : (db.students.length > 1 ? 'home' : '');
   return `
@@ -605,9 +613,8 @@ function viewStudent() {
     ${ready ? '<div class="info" style="margin-bottom:10px">🎉 أتمّ حفظ المصحف كاملاً — يمكنك إصدار شهادة الختم</div>' : ''}
     ${doneEnr.map(e => `<div class="info" style="margin-bottom:10px;text-align:start">🎉 أتمّ ${esc(e.label)} <button class="btn gold sm" style="margin-top:6px" data-act="cert-enr" data-id="${e.id}" data-sid="${s.id}">إصدار شهادة</button></div>`).join('')}
     ${cs.length ? `<div class="list">${cs.map(c => `<div class="item" data-act="open-cert" data-id="${c.id}"><div class="avatar">🏆</div><div class="t"><b>${esc(c.title)}</b><small>${fmtG(parse(c.date))} • ${esc(c.serial)}</small></div></div>`).join('')}</div>` : empty('🏅', 'لا توجد شهادات بعد')}</div>`; })()}
-  <div class="card"><h3>🕘 جدول التسميع (${recs.length})</h3>${staff()
-    ? recTable(recs, { limit: 80 })
-    : recTable(recs, { limit: 80 })}</div>`;
+  <div class="card"><h3>🕘 جدول التسميع (${st.recAll ? recs.length : scoped.length}) <button class="more" data-act="rec-all">${st.recAll ? 'عرض البرنامج الحالي فقط' : 'عرض كل التسميعات (' + recs.length + ')'}</button></h3>${st.recAll ? '' : `<p class="hint" style="margin:0 0 8px">${cur && enrById(cur) ? esc(enrById(cur).label) : 'الحفظ والمراجعة'} — آخر التسميعات في برنامجه الحالي</p>`}
+    ${recTable(st.recAll ? recs : scoped, { limit: 80 })}</div>`;
 }
 const recSort = (x, y) => y.date.localeCompare(x.date) || y.id - x.id;
 const SORT_VAL = {
@@ -946,7 +953,8 @@ const acts = {
   'edit-rec': id => { closeModal(); if (st.view !== 'add') st.editBack = st.view; const r = db.records.find(x => x.id === +id); st.form = { id: r.id, sid: r.studentId, type: r.type, enr: r.enrollmentId || '', date: r.date, surah: r.surah, surahTo: rEnd(r), from: r.from, to: r.to, grade: r.grade || '', note: r.note || '' }; go('add'); },
   'del-rec': async id => { if (!confirm('حذف هذا التسميع؟')) return; closeModal(); await api('record_delete', { id: +id }); db.records = db.records.filter(r => r.id !== +id); render(); toast('تم الحذف'); },
   quick: id => { st.form = newForm(id); st.fixed = true; go('add'); },
-  'open-student': id => { st.fixed = false; go('student', { sid: +id, pe: null }); },
+  'rec-all': () => { st.recAll = !st.recAll; render(); },
+  'open-student': id => { st.fixed = false; st.recAll = false; go('student', { sid: +id, pe: null }); },
   report: id => {
     const s = student(id), p = db.users.find(u => s.parents.includes(u.id) && u.phone);
     window.open(`https://wa.me/${p ? waNum(p.phone) : ''}?text=${encodeURIComponent(weekReport(s))}`, '_blank');
@@ -965,7 +973,7 @@ const acts = {
   'cert-enr': (id, el) => certForm(+el.dataset.sid, +id),
   'jam-all': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = ALL20.includes(c.value); }),
   'jam-none': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = false; }),
-  'open-report': id => go('report', { sid: +id, ro: new Date().getDate() <= 7 ? -1 : 0 }),
+  'open-report': id => { const ld = progLast(id, currentEnr(id)), n = new Date(); let ro = n.getDate() <= 7 ? -1 : 0; if (ld) { const d = parse(ld); ro = Math.min(0, (d.getFullYear() - n.getFullYear()) * 12 + d.getMonth() - n.getMonth()); } go('report', { sid: +id, ro }); },
   rprev: () => { st.ro--; render(); },
   rnext: () => { if (st.ro < 0) { st.ro++; render(); } },
   rback: () => go('student'),
@@ -987,7 +995,9 @@ const acts = {
     acts['chat-teacher'](r.studentId, null, `بخصوص تسميع ${recText(r)} بتاريخ ${r.date}: `);
     setTimeout(() => { const m = $('#msgin'); if (m) { m.focus(); m.setSelectionRange(m.value.length, m.value.length); } }, 60);
   },
-  'open-stmt': id => go('statement', { sid: +id, sp: new Date().getDate() <= 7 ? 'last' : 'month' }),
+  'open-stmt': id => { const cu = String(currentEnr(id)), s = student(id), ld = progLast(id, cu), n = new Date(), mk = d => d.slice(0, 7); let sp = n.getDate() <= 7 ? 'last' : 'month';
+    if (cu) sp = 'all'; else if (ld && ld.slice(0, 7) < ymd(new Date(n.getFullYear(), n.getMonth() - 1, 1)).slice(0, 7)) sp = 'all';
+    go('statement', { sid: +id, sp, stype: cu ? 'e:' + cu : (s && s.program === 'qiraat' ? 'qiraa' : (enrOf(id).length ? 'hq' : '')) }); },
   'date-today': () => { st.form.date = today(); setLD(''); render(); },
   stype: id => { st.stype = id; render(); },
   sp: id => { if (id === 'custom') { const r = stmtRange(); if (r.a >= '2000') { st.sfrom = st.sfrom || r.a; st.sto = st.sto || r.b; } } st.sp = id; render(); },
