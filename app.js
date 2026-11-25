@@ -119,6 +119,8 @@ function memorized(sid, enr, raw) {
   });
   return m;
 }
+const rPages = r => Q.pages(r.surah, r.from, r.to, rEnd(r));
+const pgText = r => { const p = rPages(r); return p % 1 ? (Math.floor(p) ? Math.floor(p) + '½' : '½') : String(p); };
 const typeAr = r => ({ hifz: 'حفظ', review: 'مراجعة', qiraa: 'قراءة' }[r.type]);
 const typeCls = r => ({ hifz: 'h', review: 'r', qiraa: 'q' }[r.type]);
 const qiraatOn = () => staff() && !!db.me.qiraat;
@@ -623,7 +625,7 @@ function viewStudent() {
 const recSort = (x, y) => y.date.localeCompare(x.date) || y.id - x.id;
 const SORT_VAL = {
   type: r => ({ hifz: 0, review: 1, qiraa: 2 }[r.type]), who: r => (student(r.studentId) || {}).name || '', range: r => absIdx(r.surah, r.from), ayahs: r => ayahs(r),
-  date: r => r.date, juz: r => Q.juz(r.surah, r.from, r.to, rEnd(r))[0] || 0, grade: r => GP[r.grade] || 0, note: r => r.note || '', reading: r => (enrById(r.enrollmentId) || {}).label || ''
+  date: r => r.date, pages: r => rPages(r), juz: r => Q.juz(r.surah, r.from, r.to, rEnd(r))[0] || 0, grade: r => GP[r.grade] || 0, note: r => r.note || '', reading: r => (enrById(r.enrollmentId) || {}).label || ''
 };
 /* ترتيب أي جدول تسميع: الافتراضي من الأقدم (أعلى) إلى الأحدث (أسفل) */
 function sortRecs(rows, ss) {
