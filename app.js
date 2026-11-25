@@ -972,7 +972,8 @@ const acts = {
   'enr-prior': id => enrollForm(id, true),
   'enr-done': async id => { const e = enrById(id); const r = await api('enrollment_save', { id: +id, studentId: e.studentId, status: 'completed', completed_at: today(), started_at: e.startedAt, shaykh: e.shaykh, note: e.note }); Object.assign(e, r.enrollment); render(); toast('🎉 سُجّل إتمام القراءة'); },
   'enr-reopen': async id => { const e = enrById(id); const r = await api('enrollment_save', { id: +id, studentId: e.studentId, status: 'active', started_at: e.startedAt, shaykh: e.shaykh, note: e.note }); Object.assign(e, r.enrollment); render(); },
-  'enr-del': async id => { if (!confirm('حذف هذا البرنامج؟ سيُحذف تسميعه أيضاً.')) return; await api('enrollment_delete', { id: +id }); db.enrollments = db.enrollments.filter(e => e.id !== +id); db.records = db.records.filter(r => r.enrollmentId !== +id); render(); toast('تم الحذف'); },
+  'enr-del': async id => { const n = db.records.filter(r => r.enrollmentId === +id).length; if (n) { const a = prompt(`⚠️ سيُحذف هذا البرنامج و ${n} تسميعاً معه.
+للتأكيد اكتب عدد التسميعات (${n}):`); if (a === null || +a !== n) { toast('أُلغي الحذف'); return; } } else if (!confirm('حذف هذا البرنامج؟')) return; await api('enrollment_delete', { id: +id }); db.enrollments = db.enrollments.filter(e => e.id !== +id); db.records = db.records.filter(r => r.enrollmentId !== +id); render(); toast('تم الحذف'); },
   'edit-hafiz': id => hafizForm(student(id)),
   'cert-enr': (id, el) => certForm(+el.dataset.sid, +id),
   'jam-all': () => document.querySelectorAll('[name=jam]').forEach(c => { c.checked = ALL20.includes(c.value); }),

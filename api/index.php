@@ -10,6 +10,12 @@ $AYAHS = require __DIR__ . '/quran.php';
 const GRADES = ['ممتاز', 'جيد جداً', 'جيد', 'مقبول', 'إعادة'];
 const RIWAYAT = ['hafs', 'hafs_qasr', 'shuba', 'qalun', 'warsh', 'bazzi', 'qunbul', 'duri_a', 'susi', 'hisham', 'zakwan', 'khalaf_h', 'khallad', 'abulharith', 'duri_k', 'wardan', 'jammaz', 'ruways', 'rawh', 'ishaq', 'idris'];
 
+/* سلة محذوفات التسميع: نسخة من الصفوف قبل حذفها لتسهيل الاسترجاع */
+function trashRecords(string $w, array $a): void {
+    q('CREATE TABLE IF NOT EXISTS records_trash LIKE records');
+    try { q('ALTER TABLE records_trash ADD COLUMN deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'); } catch (Throwable $e) { }
+    q('INSERT INTO records_trash SELECT r.*, NOW() FROM records r WHERE ' . $w, $a);
+}
 /* ---------- أدوات ---------- */
 function out($d, int $c = 200): never { http_response_code($c); echo json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); exit; }
 function fail(string $m, int $c = 400): never { out(['error' => $m], $c); }
@@ -456,6 +462,7 @@ try {
         $u = need('admin', 'school_admin', 'teacher'); $id = (int)(body()['id'] ?? 0);
         $old = q('SELECT student_id FROM records WHERE id=?', [$id])->fetch();
         if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
+        trashRecords('id=?', [$id]); audit('record_delete', 'student:' . $old['student_id'], 'record:' . $id);
         q('DELETE FROM records WHERE id=?', [$id]);
         out(['ok' => true]);
     }
@@ -914,6 +921,7 @@ try {
         if (!$e || !canSee($u, (int)$e['student_id'])) fail('غير مصرح', 403);
         $n = (int)q("SELECT COUNT(*) FROM records WHERE enrollment_id=?", [$id])->fetchColumn();
         if ($n && $u['role'] === 'teacher') fail('لا يحذف البرنامج الذي له تسميع إلا مدير المدرسة');
+        trashRecords('enrollment_id=?', [$id]); audit('enrollment_delete', $e['label'] . ' / ' . $n . ' records / student:' . $e['student_id'], 'enrollment:' . $id);
         q('DELETE FROM records WHERE enrollment_id=?', [$id]);
         q('DELETE FROM enrollments WHERE id=?', [$id]);
         out(['ok' => true]);
