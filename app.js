@@ -419,8 +419,11 @@ function viewKidsBody() {
 function viewAdd() {
   const f = st.form || (st.form = newForm(''));
   if (!db.students.length) return `<div class="card">${empty('👥', 'لا يوجد طلاب لتسجيل التسميع')}</div>`;
-  const so = student(f.sid), ac = so ? activeEnr(so.id) : [], s2 = +(f.surahTo || f.surah);
-  const progSel = so && (ac.length || so.program === 'qiraat')
+  const so = student(f.sid), s2 = +(f.surahTo || f.surah);
+  let ac = so ? activeEnr(so.id) : [];
+  if (so && f.enr && enrById(f.enr) && !ac.some(e => String(e.id) === String(f.enr))) ac = ac.concat(enrById(f.enr));
+  const noRead = so && so.program === 'qiraat' && !so.allowHr && !ac.length;
+  const progSel = so && !noRead && (ac.length || so.program === 'qiraat')
     ? `<select data-f="enr" title="البرنامج">${so.program !== 'qiraat' || so.allowHr ? `<option value="" ${!f.enr ? 'selected' : ''}>📖 حفظ ومراجعة</option>` : ''}${ac.map(e => `<option value="${e.id}" ${+f.enr === e.id ? 'selected' : ''}>📚 ${esc(e.label)}</option>`).join('')}</select>` : '';
   return `
   <div class="card tight">
@@ -429,9 +432,10 @@ function viewAdd() {
         <div style="flex:1;min-width:0"><b style="font-size:17px">${esc(so.name)}</b><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curLine(so))}</div></div>
         <button type="button" class="btn light sm" data-act="open-student" data-id="${f.sid}" title="ملف الطالب">📂</button></div>`
       : `<select data-f="sid"><option value="">— اختر الطالب —</option>${db.students.map(x => `<option value="${x.id}" ${+f.sid === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}
+    ${noRead ? `<div class="info sm" style="margin:6px 0">📚 هذا الطالب في برنامج القراءات ولا توجد له قراءة جارية.<br><button type="button" class="btn sm" data-act="enr-new" data-id="${so.id}" style="margin-top:6px">＋ تسجيل قراءة جديدة (مثل أبي عمرو)</button></div>` : ''}
     <div id="datebanner">${dateBanner(f)}</div>
     <div class="cmp">${progSel}<input type="date" data-f="date" value="${f.date}" max="${today()}" style="${progSel ? 'width:150px;flex:none' : 'flex:1'}"><span id="dayname" hidden></span></div>
-    ${!f.enr ? `<div class="seg gold sm"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>` : ''}
+    ${!f.enr && !noRead ? `<div class="seg gold sm"><button class="${f.type === 'hifz' ? 'on' : ''}" data-act="type" data-id="hifz">📖 حفظ جديد</button><button class="${f.type === 'review' ? 'on' : ''}" data-act="type" data-id="review">🔁 مراجعة</button></div>` : ''}
     <div class="cmp"><b>من</b><select data-f="surah">${SURAHS.map((x, i) => `<option value="${i + 1}" ${+f.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>`).join('')}</select>
       <input type="number" inputmode="numeric" data-f="from" value="${f.from}" min="1" max="${Q.count(+f.surah)}" placeholder="آية 1–${Q.count(+f.surah)}" title="رقم الآية"></div>
     <div class="cmp"><b>إلى</b><select data-f="surahTo">${SURAHS.map((x, i) => i + 1 >= +f.surah ? `<option value="${i + 1}" ${s2 === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>` : '').join('')}</select>
