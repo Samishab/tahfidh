@@ -2,10 +2,10 @@
 
 /* ---------- تحميل بيانات الأقسام ---------- */
 async function loadAdminTab() {
-  const k = st.mt, need = { overview: ['overview'], inbox: ['inbox'], auth: ['settings', 'mail'], platform: ['settings'], audit: ['audit', 'mail'] }[k];
+  const k = st.mt, need = { overview: ['overview'], inbox: ['inbox'], auth: ['settings', 'mail'], platform: ['settings'], audit: ['audit', 'mail', 'trash'] }[k];
   if (!need) return;
   st.adm.busy = st.adm.busy || {};
-  const fetchers = { overview: () => api('admin_overview'), settings: () => api('settings_get'), mail: () => api('mail_get'), audit: () => api('audit_list'), inbox: () => api('feedback_list') };
+  const fetchers = { overview: () => api('admin_overview'), settings: () => api('settings_get'), mail: () => api('mail_get'), audit: () => api('audit_list'), trash: () => api('trash_list'), inbox: () => api('feedback_list') };
   for (const n of need) {
     if (st.adm[n] || st.adm.busy[n]) continue;
     st.adm.busy[n] = true;
@@ -144,13 +144,15 @@ function secInbox() {
 const AUDIT_AR = { login: 'دخول', login_otp: 'دخول برمز', reset_password: 'إعادة كلمة مرور', user_delete: 'حذف حساب', student_delete: 'حذف طالب', school_save: 'حفظ مدرسة', school_delete: 'حذف مدرسة', request_approve: 'موافقة على طلب', request_reject: 'رفض طلب', mail_save: 'تعديل إعدادات البريد', settings_save: 'تعديل الإعدادات', backup_export: 'تنزيل نسخة احتياطية' };
 const KIND_AR = { otp: 'رمز دخول', invite: 'دعوة', approved: 'موافقة', test: 'تجربة', wa: 'واتساب', sms: 'رسالة', mail: 'بريد' };
 function secAudit() {
-  const A = st.adm.audit, M = st.adm.mail; if (!A || !M) return admLoading(); if (A.error) return admErr(A); if (M.error) return admErr(M);
+  const A = st.adm.audit, M = st.adm.mail, TR = st.adm.trash; if (!A || !M || !TR) return admLoading(); if (A.error) return admErr(A); if (M.error) return admErr(M);
   return `
   <div class="card"><h3>💾 نسخة احتياطية</h3><p class="hint" style="margin-top:0">ملف JSON بكل المدارس والحسابات (بدون كلمات المرور) والطلاب والتسميع والبرامج والشهادات والرسائل. احفظه في مكان آمن لأنه يحوي بيانات شخصية.</p>
     <button class="btn block gold" data-act="adm-backup">⬇ تنزيل نسخة احتياطية</button></div>
   <div class="card"><h3>📨 سجل الرسائل الصادرة</h3>
     ${M.log.length ? `<div class="tw"><table><tr><th>الوقت</th><th style="text-align:start">إلى</th><th>النوع</th><th>الحالة</th></tr>
       ${M.log.map(x => `<tr><td><small>${fmtT(x.at)}</small></td><td style="text-align:start" dir="ltr"><small>${esc(x.to)}</small></td><td>${KIND_AR[x.kind] || x.kind}</td><td>${x.status === 'sent' ? '✅' : `<span title="${esc(x.error)}">❌</span>`}</td></tr>${x.status === 'failed' && x.error ? `<tr><td colspan="4" style="text-align:start"><small style="color:var(--red)">${esc(x.error)}</small></td></tr>` : ''}`).join('')}</table></div>` : empty('📭', 'لا توجد رسائل بعد')}</div>
+  <div class="card"><h3>🗑 المحذوفات (محفوظة وقابلة للاسترجاع)</h3><p class="hint" style="margin-top:0">كل ما يحذفه أي مستخدم يختفي من النظام لكنه يبقى هنا بتاريخ الحذف واسم من حذفه.</p>
+    ${TR.items && TR.items.length ? `<div class="list">${TR.items.map(x => `<div class="item" style="cursor:default"><div class="avatar" style="font-size:16px">🗑</div><div class="t"><b>${esc(({ record: 'تسميع', enrollment: 'برنامج قراءة', student: 'طالب', user: 'حساب', school: 'مدرسة', certificate: 'شهادة', ijaza: 'إجازة', ijaza_tpl: 'نموذج إجازة' })[x.kind] || x.kind)}: ${esc(x.label)}</b><small>حُذف ${fmtT(x.deleted_at.replace(' ', 'T'))} بواسطة ${esc(x.deleted_by_name || '—')} • ${x.n} سجل${x.restored_at ? ' • ✅ استُرجع' : ''}</small></div>${x.restored_at ? '' : `<button class="btn light sm" data-act="trash-restore" data-id="${x.id}">↩ استرجاع</button>`}</div>`).join('')}</div>` : empty('🗑', 'لا توجد محذوفات')}</div>
   <div class="card"><h3>🧾 سجل النشاط (آخر 100)</h3>
     ${A.log.length ? `<div class="list">${A.log.map(x => `<div class="item" style="cursor:default"><div class="avatar" style="font-size:16px">🧾</div><div class="t"><b>${AUDIT_AR[x.action] || esc(x.action)}</b><small>${esc(x.user || '—')}${x.detail ? ' • ' + esc(x.detail) : ''}${x.target ? ' • ' + esc(x.target) : ''}</small></div><div class="side"><small>${fmtT(x.at)}</small></div></div>`).join('')}</div>` : empty('🧾', 'لا يوجد نشاط مسجّل')}</div>`;
 }
@@ -172,6 +174,7 @@ Object.assign(acts, {
     toast('جارٍ الإرسال...'); const r = await api('gateway_test', { channel: id, to });
     modal(`<h2>${r.ok ? '✅ وصل الطلب للبوابة' : '❌ فشل الإرسال'}</h2>${r.ok ? '<p class="hint">استجابة البوابة 2xx. تأكد أن الرسالة وصلت فعلاً للجوال.</p>' : `<div class="info err">${esc(r.error)}</div>`}${r.info ? `<p class="hint" dir="ltr">${esc(r.info)}</p>` : ''}<button class="btn block" data-act="close">إغلاق</button>`);
   },
+  'trash-restore': async id => { if (!confirm('استرجاع هذا العنصر؟')) return; const r = await api('trash_restore', { id: +id }); st.adm.trash = null; toast('تم الاسترجاع ✔ (' + r.rows + ')'); await refresh(); render(); },
   'adm-backup': async () => {
     toast('جارٍ التجهيز...'); const d = await api('backup_export');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(d)], { type: 'application/json' })); a.download = `tahfidh-backup-${today()}.json`; a.click();

@@ -10,12 +10,18 @@ $AYAHS = require __DIR__ . '/quran.php';
 const GRADES = ['ممتاز', 'جيد جداً', 'جيد', 'مقبول', 'إعادة'];
 const RIWAYAT = ['hafs', 'hafs_qasr', 'shuba', 'qalun', 'warsh', 'bazzi', 'qunbul', 'duri_a', 'susi', 'hisham', 'zakwan', 'khalaf_h', 'khallad', 'abulharith', 'duri_k', 'wardan', 'jammaz', 'ruways', 'rawh', 'ishaq', 'idris'];
 
-/* سلة محذوفات التسميع: نسخة من الصفوف قبل حذفها لتسهيل الاسترجاع */
-function trashRecords(string $w, array $a): void {
-    q('CREATE TABLE IF NOT EXISTS records_trash LIKE records');
-    try { q('ALTER TABLE records_trash ADD COLUMN deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'); } catch (Throwable $e) { }
-    q('INSERT INTO records_trash SELECT r.*, NOW() FROM records r WHERE ' . $w, $a);
+/* ---------- سلة المحذوفات (حذف ناعم) ----------
+   كل حذف يحفظ نسخة كاملة من الصفوف في deleted_items مع من حذف ومتى ومن أين، ثم يُحذف من الجداول فيختفي من النظام.
+   يستطيع مدير النظام (admin) استرجاعها. specs: [جدول => [شرط, معاملات]] */
+function archive(string $kind, int $refId, string $label, int $schoolId, array $specs): void {
+    q("CREATE TABLE IF NOT EXISTS deleted_items (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(30) NOT NULL, ref_id INT UNSIGNED NOT NULL, label VARCHAR(250) NOT NULL DEFAULT '', school_id INT UNSIGNED NULL, payload LONGTEXT NOT NULL, deleted_by INT UNSIGNED NULL, deleted_by_name VARCHAR(120) NOT NULL DEFAULT '', deleted_by_role VARCHAR(30) NOT NULL DEFAULT '', ip VARCHAR(64) NOT NULL DEFAULT '', deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, restored_at DATETIME NULL, KEY k (kind, ref_id), KEY d (deleted_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $data = [];
+    foreach ($specs as $t => [$w, $a]) { $rows = q("SELECT * FROM $t WHERE $w", $a)->fetchAll(PDO::FETCH_ASSOC); if ($rows) $data[$t] = $rows; }
+    $uid = $_SESSION['uid'] ?? null; $me = $uid ? q('SELECT name,username,role FROM users WHERE id=?', [$uid])->fetch() : null;
+    q('INSERT INTO deleted_items (kind,ref_id,label,school_id,payload,deleted_by,deleted_by_name,deleted_by_role,ip) VALUES (?,?,?,?,?,?,?,?,?)',
+        [$kind, $refId, mb_substr($label, 0, 250), $schoolId ?: null, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), $uid, ($me['name'] ?? '') . ' (' . ($me['username'] ?? '') . ')', $me['role'] ?? '', ip()]);
 }
+const RESTORE_ORDER = ['schools', 'users', 'students', 'enrollments', 'student_teacher', 'parent_student', 'records', 'certificates', 'messages', 'message_reads', 'ijaza_tpl', 'ijazat'];
 /* ---------- أدوات ---------- */
 function out($d, int $c = 200): never { http_response_code($c); echo json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); exit; }
 function fail(string $m, int $c = 400): never { out(['error' => $m], $c); }
@@ -462,7 +468,7 @@ try {
         $u = need('admin', 'school_admin', 'teacher'); $id = (int)(body()['id'] ?? 0);
         $old = q('SELECT student_id FROM records WHERE id=?', [$id])->fetch();
         if (!$old || !canSee($u, (int)$old['student_id'])) fail('غير مصرح', 403);
-        trashRecords('id=?', [$id]); audit('record_delete', 'student:' . $old['student_id'], 'record:' . $id);
+        archive('record', $id, 'تسميع للطالب ' . $old['student_id'], 0, ['records' => ['id=?', [$id]]]); audit('record_delete', 'student:' . $old['student_id'], 'record:' . $id);
         q('DELETE FROM records WHERE id=?', [$id]);
         out(['ok' => true]);
     }
@@ -565,10 +571,33 @@ try {
         audit('school_save', $name, 'school:' . $id);
         out(['ok' => true]);
     }
+    case 'trash_list': {
+        need('admin');
+        $rows = q('SELECT id,kind,ref_id,label,school_id,deleted_by_name,deleted_by_role,ip,deleted_at,restored_at,payload FROM deleted_items ORDER BY id DESC LIMIT 200')->fetchAll();
+        foreach ($rows as &$r) { $r['n'] = array_sum(array_map('count', json_decode($r['payload'], true) ?: [])); unset($r['payload']); }
+        out(['items' => $rows]);
+    }
+    case 'trash_restore': {
+        need('admin'); $id = (int)(body()['id'] ?? 0);
+        $it = q('SELECT * FROM deleted_items WHERE id=? AND restored_at IS NULL', [$id])->fetch();
+        if (!$it) fail('غير موجود أو مُسترجَع من قبل', 404);
+        $data = json_decode($it['payload'], true) ?: []; $n = 0;
+        db()->beginTransaction();
+        try {
+            foreach (RESTORE_ORDER as $t) foreach ($data[$t] ?? [] as $row) {
+                $cols = array_keys($row);
+                $n += q('INSERT IGNORE INTO ' . $t . ' (' . implode(',', array_map(fn($c) => "`$c`", $cols)) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($row))->rowCount();
+            }
+            q('UPDATE deleted_items SET restored_at=NOW() WHERE id=?', [$id]);
+            db()->commit();
+        } catch (Throwable $e) { db()->rollBack(); fail('تعذّر الاسترجاع: ' . $e->getMessage(), 500); }
+        audit('trash_restore', $it['kind'] . ':' . $it['ref_id'], 'trash:' . $id);
+        out(['ok' => true, 'rows' => $n]);
+    }
     case 'school_delete': {
         need('admin'); $id = (int)(body()['id'] ?? 0);
         if (q('SELECT 1 FROM students WHERE school_id=? UNION SELECT 1 FROM users WHERE school_id=?', [$id, $id])->fetchColumn()) fail('لا يمكن حذف مدرسة فيها معلمون أو طلاب');
-        audit('school_delete', '', 'school:' . $id);
+        archive('school', $id, 'مدرسة: ' . (string)q('SELECT name FROM schools WHERE id=?', [$id])->fetchColumn(), $id, ['schools' => ['id=?', [$id]], 'ijaza_tpl' => ['school_id=?', [$id]]]); audit('school_delete', '', 'school:' . $id);
         q('DELETE FROM schools WHERE id=?', [$id]);
         out(['ok' => true]);
     }
@@ -657,6 +686,7 @@ try {
         if (!$u || $u['role'] === 'student') fail('مستخدم غير موجود', 404);
         if ($me['role'] === 'school_admin' && (!in_array($u['role'], ['teacher', 'parent'], true) || !mgrOwns($me, $u['school_id']))) fail('غير مصرح', 403);
         if ($id === (int)$me['id']) fail('لا يمكنك حذف حسابك');
+        archive('user', $id, $u['role'] . ' #' . $id, (int)$u['school_id'], ['users' => ['id=?', [$id]], 'student_teacher' => ['teacher_id=?', [$id]], 'parent_student' => ['parent_id=?', [$id]]]);
         q('DELETE FROM student_teacher WHERE teacher_id=?', [$id]);
         q('UPDATE students s SET s.teacher_id=(SELECT MIN(st.teacher_id) FROM student_teacher st WHERE st.student_id=s.id) WHERE s.teacher_id=?', [$id]);
         q('DELETE FROM parent_student WHERE parent_id=?', [$id]);
@@ -766,6 +796,9 @@ try {
         $s = q('SELECT user_id,school_id FROM students WHERE id=?', [$id])->fetch();
         if (!$s) fail('الطالب غير موجود', 404);
         if (!mgrOwns($me, $s['school_id'])) fail('غير مصرح', 403);
+        $sp = ['students' => ['id=?', [$id]]]; foreach (['enrollments', 'student_teacher', 'parent_student', 'records', 'certificates', 'messages', 'message_reads'] as $t) $sp[$t] = ['student_id=?', [$id]];
+        if ($s['user_id']) $sp = ['users' => ['id=?', [(int)$s['user_id']]]] + $sp;
+        archive('student', $id, 'طالب: ' . (string)q('SELECT name FROM students WHERE id=?', [$id])->fetchColumn(), (int)$s['school_id'], $sp);
         foreach (['records', 'messages', 'message_reads', 'parent_student', 'certificates', 'enrollments', 'student_teacher'] as $t) q("DELETE FROM $t WHERE student_id=?", [$id]);
         if ($s['user_id']) q('DELETE FROM users WHERE id=?', [$s['user_id']]);
         q('DELETE FROM students WHERE id=?', [$id]);
@@ -808,6 +841,7 @@ try {
         $u = need('admin', 'school_admin'); $cid = (int)(body()['id'] ?? 0);
         $sid = (int)q('SELECT student_id FROM certificates WHERE id=?', [$cid])->fetchColumn();
         if (!$sid || !canSee($u, $sid)) fail('غير مصرح', 403);
+        archive('certificate', (int)$cid, 'شهادة #' . $cid, 0, ['certificates' => ['id=?', [(int)$cid]]]);
         q('DELETE FROM certificates WHERE id=?', [$cid]);
         out(['ok' => true]);
     }
@@ -842,7 +876,7 @@ try {
         out(['tpl' => ['id' => (int)$t['id'], 'name' => $t['name'], 'data' => json_decode($t['data'], true), 'at' => $t['updated_at']]]);
     }
     case 'ijaza_tpl_delete': {
-        $u = need('admin', 'school_admin', 'teacher'); q('DELETE FROM ijaza_tpl WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
+        $u = need('admin', 'school_admin', 'teacher'); archive('ijaza_tpl', (int)(body()['id'] ?? 0), 'نموذج إجازة', (int)$u['school_id'], ['ijaza_tpl' => ['id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]]]); q('DELETE FROM ijaza_tpl WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
         out(['ok' => true]);
     }
     case 'ijaza_save': {   // إصدار جديد (id=0) أو تعديل إجازة صادرة
@@ -869,7 +903,7 @@ try {
             'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'data' => json_decode($i['data'], true)]]);
     }
     case 'ijaza_delete': {
-        $u = need('admin', 'school_admin', 'teacher'); if ($u['role'] === 'admin') q('DELETE FROM ijazat WHERE id=?', [(int)(body()['id'] ?? 0)]); else q('DELETE FROM ijazat WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
+        $u = need('admin', 'school_admin', 'teacher'); archive('ijaza', (int)(body()['id'] ?? 0), 'إجازة', (int)$u['school_id'], ['ijazat' => [$u['role'] === 'admin' ? 'id=?' : 'id=? AND school_id=' . (int)$u['school_id'], [(int)(body()['id'] ?? 0)]]]); if ($u['role'] === 'admin') q('DELETE FROM ijazat WHERE id=?', [(int)(body()['id'] ?? 0)]); else q('DELETE FROM ijazat WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
         out(['ok' => true]);
     }
 
@@ -921,7 +955,7 @@ try {
         if (!$e || !canSee($u, (int)$e['student_id'])) fail('غير مصرح', 403);
         $n = (int)q("SELECT COUNT(*) FROM records WHERE enrollment_id=?", [$id])->fetchColumn();
         if ($n && $u['role'] === 'teacher') fail('لا يحذف البرنامج الذي له تسميع إلا مدير المدرسة');
-        trashRecords('enrollment_id=?', [$id]); audit('enrollment_delete', $e['label'] . ' / ' . $n . ' records / student:' . $e['student_id'], 'enrollment:' . $id);
+        archive('enrollment', $id, $e['label'] . ' (' . $n . ' تسميع)', 0, ['enrollments' => ['id=?', [$id]], 'records' => ['enrollment_id=?', [$id]]]); audit('enrollment_delete', $e['label'] . ' / ' . $n . ' records / student:' . $e['student_id'], 'enrollment:' . $id);
         q('DELETE FROM records WHERE enrollment_id=?', [$id]);
         q('DELETE FROM enrollments WHERE id=?', [$id]);
         out(['ok' => true]);
