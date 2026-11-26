@@ -77,6 +77,7 @@ function lastOf(sid, type, enr, until) {
 }
 function nextPos(sid, type, enr, date) {
   const l = lastOf(sid, type, enr, date), qr = type === 'qiraa', P = o => ({ ...o, surahTo: o.surah });
+  if (!l && type === 'hifz') { const pn = priorNext(student(sid)?.priorMem); if (pn) return pn; }
   if (!l) return P({ surah: qr ? 1 : (type === 'hifz' ? 78 : 1), from: 1, to: '', hint: qr ? 'بداية الختمة من سورة الفاتحة' : '' });
   const ls = rEnd(l);
   if (l.to < Q.count(ls)) return P({ surah: ls, from: l.to + 1, to: '', hint: `آخر موضع: ${Q.name(ls)} آية ${l.to} — يبدأ من الآية ${l.to + 1}` });
@@ -110,10 +111,38 @@ const newForm = (sid, type = 'hifz', enr = null, date = '') => {
   date = date || getLD() || today();
   return { id: null, sid: sid || '', type, enr: enr ? String(enr) : '', date, grade: '', note: '', redo: false, ...nextPos(sid, type, enr, date) };
 };
+// المحفوظ قبل التسجيل: من الناس صعوداً أو من الفاتحة نزولاً حتى سورة/آية، مع أجزاء متفرقة
+function priorFill(m, p) {
+  if (!p) return;
+  const set = (a, b) => { for (let i = a; i <= b; i++) m[i - 1] = 1; };
+  const s = +p.surah, a = s ? (+p.ayah || Q.count(s)) : 0;
+  if (p.dir === 'nas' && s) { if (s < 114) set(Q.abs(s + 1, 1), Q.TOTAL); set(Q.abs(s, 1), Q.abs(s, a)); }
+  if (p.dir === 'fatiha' && s) set(1, Q.abs(s, a));
+  (p.juz || []).forEach(j => set(Q.juzAbs[j - 1], (Q.juzAbs[j] || Q.TOTAL + 1) - 1));
+}
+function priorNext(p) {   // موضع الحفظ التالي بعد المحفوظ السابق
+  if (!p || !+p.surah) return null;
+  const s = +p.surah, a = +p.ayah || Q.count(s), P = (surah, from, hint) => ({ surah, surahTo: surah, from, to: '', hint });
+  const h = `المحفوظ قبل التسجيل حتى ${Q.name(s)} آية ${a}`;
+  if (a < Q.count(s)) return P(s, a + 1, h);
+  const n = p.dir === 'nas' ? s - 1 : s + 1;
+  return n >= 1 && n <= 114 ? P(n, 1, h) : null;
+}
+function priorFields(s) {
+  const p = (s && s.priorMem) || {};
+  return `<div id="st_prior" class="gap" style="border:1.5px solid var(--line);border-radius:14px;padding:12px;background:#fff" ${s && s.hafiz ? 'hidden' : ''}>
+    <label class="f" style="margin:0">📖 المحفوظ قبل التسجيل <span class="hint">(يظهر في خريطة الأجزاء)</span></label>
+    <select name="pm_dir"><option value="">— لا يوجد —</option><option value="nas" ${p.dir === 'nas' ? 'selected' : ''}>من الناس صعوداً إلى</option><option value="fatiha" ${p.dir === 'fatiha' ? 'selected' : ''}>من الفاتحة إلى</option></select>
+    <div class="row"><div><label class="f">السورة</label><select name="pm_surah"><option value="">—</option>${SURAHS.map((x, i) => `<option value="${i + 1}" ${+p.surah === i + 1 ? 'selected' : ''}>${i + 1} - ${x[0]}</option>`).join('')}</select></div>
+      <div><label class="f">الآية <span class="hint">(فارغ = كامل السورة)</span></label><input name="pm_ayah" type="number" inputmode="numeric" min="1" max="286" value="${p.ayah || ''}"></div></div>
+    <details ${(p.juz || []).length ? 'open' : ''}><summary class="hint" style="cursor:pointer">＋ أجزاء متفرقة محفوظة</summary><div class="juzpick">${Array.from({ length: 30 }, (_, i) => `<label><input type="checkbox" name="pm_juz" value="${i + 1}" ${(p.juz || []).includes(i + 1) ? 'checked' : ''}><span>${i + 1}</span></label>`).join('')}</div></details>
+  </div>`;
+}
 // خريطة الحفظ: enr فارغ = حفظ المصحف، وإلا ختمة القراءة المحددة. raw = تجاهل علامة «حافظ» اليدوية
 function memorized(sid, enr, raw) {
   const m = new Uint8Array(Q.TOTAL), s = student(sid);
   if (!enr && !raw && s && s.hafiz) { m.fill(1); return m; }
+  if (!enr && s) priorFill(m, s.priorMem);
   db.records.filter(r => r.studentId === +sid && (enr ? r.type === 'qiraa' && r.enrollmentId === +enr : r.type === 'hifz' && !r.enrollmentId)).forEach(r => {
     for (let i = Q.abs(r.surah, r.from); i <= Q.abs(rEnd(r), r.to); i++) m[i - 1] = 1;
   });
@@ -179,8 +208,8 @@ const appUrl = () => location.origin + location.pathname.replace(/index\.html$/,
 
 /* ---------- حالة المنصة (تظهر في صفحتي الدخول والتسجيل؛ اجعلها null لإخفائها) ---------- */
 const PLATFORM_STATUS = {
-  badge: '🧪 نسخة تجريبية • مجانية حالياً',
-  note: 'المنصة في مرحلة التجربة والتطوير، والاستخدام مجاني خلال هذه الفترة. قد تُضاف ميزات جديدة وقد يتغير بعضها، وملاحظاتك تساعدنا على تحسينها.'
+  badge: '🌿 وقفٌ لله تعالى • نسخة تجريبية',
+  note: 'المنصة وقفٌ لخدمة القرآن الكريم وأهله، وهي في مرحلة التجربة والتطوير. قد تُضاف ميزات جديدة وقد يتغير بعضها، وملاحظاتك تساعدنا على تحسينها.'
 };
 const beta = () => (st.site && st.site.beta) || PLATFORM_STATUS;
 const betaPill = () => beta() && beta().badge ? `<span class="beta">${esc(beta().badge)}</span>` : '';
@@ -456,8 +485,8 @@ ${!f.enr ? `<div class="hscroll" id="grades"><span class="hint" style="align-sel
 const dateBanner = f => f.date && f.date !== today() ? `<div class="info sm" style="text-align:start">📅 تسجّل بتاريخ <b>${fmtDMY(parse(f.date))}</b> <button type="button" class="btn light sm" data-act="date-today">↩ العودة إلى اليوم</button></div>` : '';
 const RL_MODES = [['month', '📅 الشهر'], ['week', '🗓 الأسبوع'], ['day', '📌 اليوم'], ['last5', '🔢 آخر 5'], ['last10', '🔢 آخر 10'], ['all', '♾ الكل']];
 function recListHtml(f) {
-  if (!f.date || !st.fixed || !f.sid || f.id) return '';
-  const mode = st.rlmode || 'month', mine = db.records.filter(r => r.studentId === +f.sid), d0 = parse(f.date);
+  if (!f.date || !f.sid || f.id) return '';
+  const mode = st.rlmode || 'last5', mine = progRecs(f.sid, f.enr), d0 = parse(f.date);
   let base, label;
   if (mode === 'week') { const ws = weekStart(d0), a0 = ymd(ws), b0 = ymd(addDays(ws, 6)); base = mine.filter(r => r.date >= a0 && r.date <= b0); label = `${fmtS(ws)} – ${fmtS(addDays(ws, 6))}`; }
   else if (mode === 'day') { base = mine.filter(r => r.date === f.date); label = `${pad(d0.getDate())}/${pad(d0.getMonth() + 1)}/${d0.getFullYear()}`; }
@@ -557,6 +586,7 @@ function studentForm(s) {
     <div style="border:1.5px solid var(--line);border-radius:14px;padding:12px;background:#fff">
       <label class="row" style="gap:8px"><input type="checkbox" name="hafiz" id="st_hafiz" style="width:auto;flex:none" ${s?.hafiz ? 'checked' : ''}> <b>أتمّ حفظ المصحف كاملاً مسبقاً</b></label>
       <div class="gap" style="margin-top:8px"><input name="hafwhere" maxlength="160" value="${esc(s?.hafizWhere)}" placeholder="أين أتمّه؟ (اختياري)"><textarea name="hafnote" maxlength="300" placeholder="ملاحظات (اختياري)">${esc(s?.hafizNote)}</textarea></div></div>
+    ${priorFields(s)}
     ${!s ? `<div><label class="f">قراءات / روايات أتمّها سابقاً <span class="hint">(اختياري)</span></label><div class="jamgrid">${QURRA.map(([, qn, rs]) => `<div style="padding:3px 0"><b style="color:var(--g1);font-size:13px">${qn}</b> ${rs.map(([k, n]) => `<label><input type="checkbox" name="prk" value="${k}"> ${n}</label>`).join('')}</div>`).join('')}</div>
       <input name="prior_where" maxlength="160" style="margin-top:8px" placeholder="عند من / أين أتمّها؟ (اختياري)"></div>` : ''}
     <div><label class="f">المجموعة / الحلقة <span class="hint">(اختياري)</span></label><input name="group" value="${esc(s?.group)}" placeholder="مثال: حلقة الفجر"></div>
@@ -786,7 +816,7 @@ function viewManage() {
     list = ss.length ? ss.map(x => {
       const m = mgrOf(x), stt = schoolState(x), ns = x.ns ?? db.students.filter(y => y.school_id === x.id).length, nt = x.nt ?? 0;
       return `<div class="item" data-act="${solo && m ? 'edit-user' : 'edit-school'}" data-id="${solo && m ? m.id : x.id}">${schoolLogoImg(x)}
-        <div class="t"><b>${esc(solo && m ? m.name : x.name)} ${x.plan ? `<span class="badge b-hifz">${PLAN_AR[x.plan] || x.plan}</span>` : ''} ${stt ? `<span class="badge g-إعادة">${stt}</span>` : ''}</b>
+        <div class="t"><b>${esc(solo && m ? m.name : x.name)} ${stt ? `<span class="badge g-إعادة">${stt}</span>` : ''}</b>
           <small>${solo ? '🧑‍🏫 معلم مستقل • ' + esc(x.name) : '👔 ' + (m ? esc(m.name) : 'بلا مدير') + ' • ' + nt + ' معلم'} • ${ns} طالب</small></div>
         ${m ? `<button class="btn light sm auto" data-act="reset-pw" data-id="${m.id}" title="إعادة تعيين كلمة المرور">🔑</button>` : ''}
         ${solo ? `<button class="btn light sm auto" data-act="edit-school" data-id="${x.id}" title="الاشتراك والإعدادات">⚙️</button>` : ''}</div>`;
@@ -830,8 +860,7 @@ function schoolForm(s) {
   <form id="schform" class="gap" data-id="${s ? s.id : ''}">
     <div class="logo-pick"><img class="logo" id="schprev" src="${esc(st.tmpLogo) || 'icon.svg'}"><div style="flex:1"><label class="f">شعار المدرسة</label><input type="file" id="schlogo" accept="image/*" style="padding:8px"></div></div>
     <div><label class="f">اسم المدرسة / الحلقة</label><input name="name" required value="${esc(s?.name)}"></div>
-    ${adm ? `<div class="row"><div><label class="f">الباقة</label><select name="plan">${Object.entries(PLAN_AR).map(([k, l]) => `<option value="${k}" ${(s?.plan || 'free') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div><label class="f">تنتهي في <span class="hint">(اختياري)</span></label><input type="date" name="exp" value="${esc(s?.expires_at || '')}"></div></div>
+    ${adm ? `<input type="hidden" name="plan" value="${s?.plan || 'free'}"><input type="hidden" name="exp" value="${esc(s?.expires_at || '')}">
       <div><label class="f">أقصى عدد طلاب <span class="hint">(فارغ = بلا حد)</span></label><input type="number" name="maxs" min="0" inputmode="numeric" value="${s?.max_students || ''}"></div>
       <label class="row" style="gap:8px"><input type="checkbox" name="sactive" style="width:auto;flex:none" ${s && s.active === false ? '' : 'checked'}> الحلقة مفعّلة <small class="hint">(إيقافها يمنع دخول كل من فيها)</small></label>
       <div><label class="f">ملاحظات داخلية <span class="hint">(لا تظهر لأحد غيرك)</span></label><textarea name="snotes" maxlength="300">${esc(s?.notes || '')}</textarea></div>` : ''}
@@ -1184,6 +1213,7 @@ document.addEventListener('submit', run(async e => {
     const r = await api('student_save', {
       id: +f.dataset.id || 0, name: f.name.value, school_id: +f.school.value, teacher_ids: [...f.querySelectorAll('[name=tch]:checked')].map(x => +x.value), group: f.group.value,
       new_parents: [...f.querySelectorAll('.np_row')].map(r => ({ name: r.querySelector('[name=np_name]').value.trim(), email: r.querySelector('[name=np_email]').value.trim(), phone: r.querySelector('[name=np_phone]').value.trim() })).filter(x => x.name || x.email), program: f.program.value, hafiz: f.hafiz.checked || f.program.value === 'qiraat', hafiz_where: f.hafwhere.value, hafiz_note: f.hafnote.value,
+      prior_mem: { dir: f.pm_dir.value, surah: +f.pm_surah.value || 0, ayah: +f.pm_ayah.value || 0, juz: [...f.querySelectorAll('[name=pm_juz]:checked')].map(x => +x.value) },
       prior_list: [...f.querySelectorAll('[name=prk]:checked')].map(x => ({ kind: 'riwaya', riwayat: [x.value], label: RW[x.value].label })), prior_where: f.prior_where ? f.prior_where.value : '',
       parent_ids: [...f.querySelectorAll('[name=par]:checked')].map(x => +x.value), login_username: f.login.value, student_email: f.semail.value, student_phone: f.sphone.value, allow_hr: !!(f.allow_hr && f.allow_hr.checked)
     });
@@ -1213,6 +1243,7 @@ document.addEventListener('submit', run(async e => {
 
 document.addEventListener('change', run(async e => {
   const t = e.target;
+  if (t.id === 'st_hafiz') { const b = $('#st_prior'); if (b) b.hidden = t.checked; }
   if (t.id === 'rlmode') { st.rlmode = t.value; const l = $('#reclist'); if (l) l.innerHTML = recListHtml(st.form); return; }
   if (t.id === 'schlogo' && t.files[0]) { st.tmpLogo = await resizeLogo(t.files[0]); $('#schprev').src = st.tmpLogo; }
   if (t.id === 'qiraatchk') { await api('set_qiraat', { on: t.checked }); db.me.qiraat = t.checked; render(); toast(t.checked ? 'تم تفعيل القراءات' : 'تم الرجوع إلى حفص فقط'); }

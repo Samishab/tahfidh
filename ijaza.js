@@ -261,6 +261,7 @@ function viewIjaza() {
   return `<div class="card noprint"><div class="row"><button class="btn gold" data-act="print">🖨 طباعة / حفظ PDF</button><button class="btn light auto" data-act="ij-back">رجوع</button>
     ${rec && staff() ? `<button class="btn light auto" data-act="ij-edit" data-id="${rec.id}">✏️ تعديل</button>` : ''}${rec && staff() ? `<button class="btn red auto" data-act="ij-del" data-id="${rec.id}">🗑</button>` : ''}</div>
     <p class="hint" style="margin:8px 0 0">${src.V.kind === 'short' ? 'ورقة واحدة A4' : 'الكتاب بحجم A4 طولي'} — اختر «حفظ بتنسيق PDF» من نافذة الطباعة${rec ? ` • رقم الإجازة: <b dir="ltr">${esc(rec.serial)}</b>` : ' • (معاينة غير محفوظة)'}</p></div>
+  ${rec && rec.status === 'pending' ? `<div class="card" style="border:2px dashed var(--gold);text-align:center"><b>⏳ إجازة غير معتمدة بعد — بانتظار مدير المدرسة</b>${isMgr() ? `<div class="noprint"><button class="btn gold sm" style="margin-top:8px" data-act="ij-approve" data-id="${rec.id}">✔ اعتماد الإجازة</button></div>` : ''}</div>` : ''}
   <div class="rptwrap ijwrap" id="ijwrap"><div id="ijbook" class="ijbook"></div></div>`;
 }
 const IJ_FONTS = ['KFGQPC', 'IJ Thuluth', 'IJ Mateen', 'IJ Manal', 'IJ Bahij', 'QCF_BSML', 'QCF_P063', 'QCF_P077', 'QCF_P262', 'QCF_P375', 'QCF_P427', 'Amiri', 'Aref Ruqaa'];
@@ -328,18 +329,23 @@ function viewIjTpls() {
 }
 
 /* ---------- بطاقة في صفحة الطالب ---------- */
+// أهلية الإجازة: حافظ + ختمة مكتملة في المنصة (أو استثناء يؤكده الشيخ)
+const ijHafiz = s => s.hafiz || memorized(s.id, '', true).reduce((x, y) => x + y, 0) === Q.TOTAL;
+const ijDone = s => enrOf(s.id).some(e => e.status === 'completed' && !e.prior);
 function ijCard(s) {
   ijLoad();
   const mine = IJ.list.filter(i => i.studentId === s.id);
   if (!staff() && !mine.length) return '';
-  return `<div class="card"><h3>📜 الإجازات (${mine.length}) ${staff() ? `<button class="more" data-act="ij-new" data-id="${s.id}">＋ إصدار إجازة</button>` : ''}</h3>
-    ${mine.length ? `<div class="list">${mine.map(i => `<div class="item" data-act="ij-open" data-id="${i.id}"><div class="avatar">📜</div><div class="t"><b>${esc(i.title || (i.kind === 'short' ? 'إجازة مختصرة' : 'إجازة'))}</b><small>${i.kind === 'short' ? 'ورقة واحدة' : 'كاملة'} • ${esc(i.date)}</small></div></div>`).join('')}</div>` : '<p class="hint">لم تُصدر له إجازة بعد.</p>'}
+  return `<div class="card"><h3>📜 الإجازات (${mine.length}) ${staff() && ijHafiz(s) ? `<button class="more" data-act="ij-new" data-id="${s.id}">＋ إصدار إجازة</button>` : ''}</h3>
+    ${staff() && !ijHafiz(s) ? '<p class="hint" style="margin:0 0 8px">🔒 الإجازة لحافظ القرآن كاملاً فقط. الشهادات متاحة للجميع.</p>' : ''}
+    ${mine.length ? `<div class="list">${mine.map(i => `<div class="item" data-act="ij-open" data-id="${i.id}"><div class="avatar">📜</div><div class="t"><b>${esc(i.title || (i.kind === 'short' ? 'إجازة مختصرة' : 'إجازة'))}${i.status === 'pending' ? ' <span class="badge b-rev">⏳ بانتظار الاعتماد</span>' : ''}</b><small>${i.kind === 'short' ? 'ورقة واحدة' : 'كاملة'} • ${esc(i.date)}</small></div></div>`).join('')}</div>` : '<p class="hint">لم تُصدر له إجازة بعد.</p>'}
     ${staff() ? `<button class="btn light block sm" style="margin-top:8px" data-act="ij-tpls">⚙️ نماذج الإجازة وأسانيدها</button>` : ''}</div>`;
 }
 function ijIssueForm(sid, editId) {
   const s = student(sid), rec = editId ? IJ.list.find(i => i.id === editId) : null, V = rec ? rec.data.V : {};
   if (!IJ.tpls.length && !rec) { toast('أنشئ نموذج إجازة أولاً من «نماذج الإجازة»'); st.ijBack = 'student'; return acts['ij-tpls'](); }
   const tplOpt = IJ.tpls.map(t => `<option value="${t.id}" ${rec && rec.tplId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  if (!rec && !ijHafiz(s)) return toast('الإجازة لحافظ القرآن كاملاً فقط');
   modal(`<h2>📜 ${rec ? 'تعديل بيانات الإجازة' : 'إصدار إجازة'} — ${esc(s.name)}</h2>
   <form id="ijissue" class="gap" data-sid="${s.id}" data-id="${editId || ''}">
     ${rec ? '' : `<div><label class="f">النموذج</label><select name="tpl">${tplOpt}</select></div>`}
@@ -351,6 +357,8 @@ function ijIssueForm(sid, editId) {
     <div><label class="f">تفاصيل أوقات القراءة <span class="hint">(اختياري — تظهر في نص الإجازة)</span></label><textarea name="sessions" rows="3" maxlength="800" placeholder="مثال: وقد قرأ عليّ في الفترة من ... إلى ...">${esc(V.sessions || '')}</textarea></div>
     <div><label class="f">القراءة <span class="hint">(اتركها فارغة لتؤخذ من النموذج)</span></label><textarea name="reading" rows="3" maxlength="600">${esc(V.reading || '')}</textarea></div>
     <div class="row"><div><label class="f">تاريخ الإجازة</label><input type="date" name="date" value="${esc(rec ? rec.date : today())}"></div><div><label class="f">المكان</label><input name="place" value="${esc(V.place || '')}" maxlength="80"></div></div>
+    ${!rec && !ijDone(s) ? '<label class="row info" style="gap:8px;text-align:start"><input type="checkbox" name="exception" required style="width:auto;flex:none"> <span>لا توجد له ختمة مكتملة في المنصة. أؤكد أنه قرأ عليّ ختمة كاملة خارجها.</span></label>' : ''}
+    ${db.me.role === 'teacher' ? '<p class="hint" style="margin:0">تُرسل الإجازة لمدير المدرسة لاعتمادها، ولا تظهر للطالب قبل ذلك.</p>' : ''}
     <button class="btn block gold">${rec ? 'حفظ' : 'إنشاء الإجازة'}</button><button type="button" class="btn light block" data-act="close">إلغاء</button>
   </form>`);
 }
@@ -362,6 +370,7 @@ Object.assign(acts, {
   'ij-new': id => { ijLoad().then(() => ijIssueForm(+id)); if (IJ.loaded) ijIssueForm(+id); },
   'ij-open': id => { st.ijBack = st.view; go('ijaza', { ijv: { mode: 'saved', id: +id } }); },
   'ij-del': async id => { if (!confirm('حذف هذه الإجازة نهائياً؟')) return; await api('ijaza_delete', { id: +id }); IJ.list = IJ.list.filter(i => i.id !== +id); toast('تم الحذف'); go(st.ijBack || 'students'); },
+  'ij-approve': async id => { if (!confirm('اعتماد هذه الإجازة؟ ستظهر للطالب وولي أمره.')) return; const r = await api('ijaza_approve', { id: +id }); const ix = IJ.list.findIndex(i => i.id === +id); if (ix >= 0) IJ.list[ix] = r.ijaza; render(); toast('تم الاعتماد ✔'); },
   'ij-edit': id => { const i = IJ.list.find(x => x.id === +id); if (i) ijIssueForm(i.studentId, i.id); },
   'ij-tpl-new': () => { st.ije = { target: 'tpl', id: 0, name: '', T: ijDefault() }; go('ijtpl'); },
   'ij-tpl-edit': id => { const t = IJ.tpls.find(x => x.id === +id); if (!t) return; st.ije = { target: 'tpl', id: t.id, name: t.name, T: { ...ijDefault(), ...t.data, inc: { ...ijDefault().inc, ...(t.data.inc || {}) } } }; go('ijtpl'); },
@@ -414,7 +423,7 @@ document.addEventListener('submit', async e => {
       let T, tplId = null;
       if (id) { const rec = IJ.list.find(i => i.id === id); T = rec.data.T; tplId = rec.tplId; } else { const tp = IJ.tpls.find(t => t.id === +g('tpl')); if (!tp) throw new Error('اختر النموذج'); T = { ...ijDefault(), ...tp.data, inc: { ...ijDefault().inc, ...(tp.data.inc || {}) } }; tplId = tp.id; }
       const kind = g('kind'), title = kind === 'short' ? 'إجازة مختصرة' : 'إجازة بقراءة القرآن الكريم';
-      const r = await api('ijaza_save', { id, studentId: sid, tplId, kind, title, student: V.name, date: V.date, data: { T, V } });
+      const r = await api('ijaza_save', { id, studentId: sid, tplId, kind, title, student: V.name, date: V.date, data: { T, V }, exception: !!(f.elements.exception && f.elements.exception.checked) });
       const ix = IJ.list.findIndex(i => i.id === r.ijaza.id); if (ix >= 0) IJ.list[ix] = r.ijaza; else IJ.list.unshift(r.ijaza);
       closeModal(); st.ijBack = 'student'; go('ijaza', { ijv: { mode: 'saved', id: r.ijaza.id } }); toast('تم ✔');
     }

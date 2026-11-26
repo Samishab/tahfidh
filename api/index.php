@@ -116,6 +116,31 @@ function qiraatAllowedAny(array $u, array $teacherIds): bool {
     if (!in_array($u['role'], ['admin', 'school_admin'], true) || !$teacherIds) return false;
     return (bool)q('SELECT 1 FROM users WHERE qiraat=1 AND id IN (' . implode(',', array_map('intval', $teacherIds)) . ') LIMIT 1')->fetchColumn();
 }
+/* الحافظ: معلَّم «أتمّ الحفظ» أو اكتمل محفوظه (تسميع الحفظ + المحفوظ قبل التسجيل) */
+function isHafiz(array $s): bool {
+    global $AYAHS;
+    if (!empty($s['hafiz'])) return true;
+    $before = [0]; foreach ($AYAHS as $i => $n) $before[$i + 1] = $before[$i] + $n;
+    $abs = fn(int $su, int $a) => $before[$su - 1] + $a;
+    $m = [];
+    $mark = function (int $a, int $b) use (&$m) { for ($i = $a; $i <= $b; $i++) $m[$i] = 1; };
+    foreach (q("SELECT surah,surah_to,ayah_from,ayah_to FROM records WHERE student_id=? AND type='hifz' AND enrollment_id IS NULL", [(int)$s['id']])->fetchAll() as $r)
+        $mark($abs((int)$r['surah'], (int)$r['ayah_from']), $abs((int)($r['surah_to'] ?: $r['surah']), (int)$r['ayah_to']));
+    $p = json_decode($s['prior_mem'] ?? '', true) ?: [];
+    $su = (int)($p['surah'] ?? 0);
+    if ($su) {
+        $a = (int)($p['ayah'] ?? 0) ?: $AYAHS[$su - 1];
+        if ($p['dir'] === 'nas') { if ($su < 114) $mark($abs($su + 1, 1), $before[114]); $mark($abs($su, 1), $abs($su, $a)); }
+        if ($p['dir'] === 'fatiha') $mark(1, $abs($su, $a));
+    }
+    $juz = [[1,1],[2,142],[2,253],[3,93],[4,24],[4,148],[5,82],[6,111],[7,88],[8,41],[9,93],[11,6],[12,53],[15,1],[17,1],[18,75],[21,1],[23,1],[25,21],[27,56],[29,46],[33,31],[36,28],[39,32],[41,47],[46,1],[51,31],[58,1],[67,1],[78,1]];
+    foreach ($p['juz'] ?? [] as $j) { $from = $abs($juz[$j - 1][0], $juz[$j - 1][1]); $mark($from, $j < 30 ? $abs($juz[$j][0], $juz[$j][1]) - 1 : $before[114]); }
+    return count($m) >= $before[114];
+}
+function ijazaOut(array $i): array {
+    return ['id' => (int)$i['id'], 'serial' => $i['serial'], 'studentId' => (int)$i['student_id'], 'tplId' => $i['tpl_id'] ? (int)$i['tpl_id'] : null, 'kind' => $i['kind'],
+        'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'status' => $i['status'] ?? 'approved', 'data' => json_decode($i['data'], true)];
+}
 function certOut(array $c): array {
     return ['id' => (int)$c['id'], 'serial' => $c['serial'], 'studentId' => (int)$c['student_id'], 'student' => $c['student_name'], 'school' => $c['school_name'],
         'kind' => $c['kind'], 'title' => $c['title'], 'riwaya' => $c['riwaya'], 'from' => $c['period_from'], 'to' => $c['period_to'],
@@ -270,7 +295,7 @@ function bootstrap(array $u): array {
     [$w, $p] = scope($u);
     $fs = $u['role'] === 'admin' ? (int)($_GET['school'] ?? 0) : 0;              // فلتر مدرسة للمدير: يُطبَّق في الخادم
     if ($fs) { $w = 'school_id=?'; $p = [$fs]; }
-    $students = q("SELECT id,name,grp,riwaya,program,hafiz,hafiz_where,hafiz_note,allow_hr,school_id,teacher_id,user_id FROM students WHERE $w ORDER BY name", $p)->fetchAll();
+    $students = q("SELECT id,name,grp,riwaya,program,hafiz,hafiz_where,hafiz_note,prior_mem,allow_hr,school_id,teacher_id,user_id FROM students WHERE $w ORDER BY name", $p)->fetchAll();
     $ids = array_map(fn($s) => (int)$s['id'], $students);
     $in = $ids ? implode(',', $ids) : '0';
     $par = [];
@@ -281,7 +306,7 @@ function bootstrap(array $u): array {
     if (in_array($u['role'], ['admin', 'school_admin', 'teacher'], true))
         foreach (q("SELECT ps.student_id,x.name FROM parent_student ps JOIN users x ON x.id=ps.parent_id WHERE ps.student_id IN ($in) ORDER BY x.name")->fetchAll() as $r) $pn[(int)$r['student_id']][] = $r['name'];
     $stOut = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'group' => $s['grp'] ?? '', 'riwaya' => $s['riwaya'] ?? 'hafs', 'program' => $s['program'] ?? 'hifz', 'allowHr' => !empty($s['allow_hr']), 'hafiz' => (bool)($s['hafiz'] ?? 0),
-        'hafizWhere' => $s['hafiz_where'] ?? '', 'hafizNote' => $s['hafiz_note'] ?? '', 'school_id' => $s['school_id'] ? (int)$s['school_id'] : null,
+        'priorMem' => json_decode($s['prior_mem'] ?? '', true) ?: null, 'hafizWhere' => $s['hafiz_where'] ?? '', 'hafizNote' => $s['hafiz_note'] ?? '', 'school_id' => $s['school_id'] ? (int)$s['school_id'] : null,
         'teacher_id' => $s['teacher_id'] ? (int)$s['teacher_id'] : null, 'user_id' => $s['user_id'] ? (int)$s['user_id'] : null,
         'parents' => $par[(int)$s['id']] ?? [], 'parent_names' => $pn[(int)$s['id']] ?? [], 'teachers' => $tch[(int)$s['id']] ?? []], $students);
     $recs = array_map('recOut', q("SELECT r.*, u.name by_name FROM records r LEFT JOIN users u ON u.id=r.teacher_id WHERE r.student_id IN ($in) ORDER BY r.rec_date DESC, r.id DESC")->fetchAll());
@@ -748,6 +773,14 @@ try {
         if ($id) q('UPDATE students SET name=?, school_id=?, teacher_id=?, grp=?, program=?, hafiz=?, hafiz_where=?, hafiz_note=?, allow_hr=? WHERE id=?', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn, $allowHr, $id]);
         else { q('INSERT INTO students (name,school_id,teacher_id,grp,program,hafiz,hafiz_where,hafiz_note,allow_hr) VALUES (?,?,?,?,?,?,?,?,?)', [$name, $school, $teacher, $grp, $program, $hafiz, $hw, $hn, $allowHr]); $id = (int)db()->lastInsertId(); }
         q('DELETE FROM student_teacher WHERE student_id=?', [$id]);
+        if (array_key_exists('prior_mem', $b)) {
+            $pm = is_array($b['prior_mem']) ? $b['prior_mem'] : [];
+            $dir = in_array($pm['dir'] ?? '', ['nas', 'fatiha'], true) ? $pm['dir'] : ''; $ps = (int)($pm['surah'] ?? 0); $pa = (int)($pm['ayah'] ?? 0);
+            if ($ps < 1 || $ps > 114 || !$dir) { $dir = ''; $ps = 0; $pa = 0; }
+            if ($pa < 0 || ($ps && $pa > $AYAHS[$ps - 1])) $pa = 0;
+            $juz = array_values(array_unique(array_filter(array_map('intval', is_array($pm['juz'] ?? null) ? $pm['juz'] : []), fn($j) => $j >= 1 && $j <= 30)));
+            q('UPDATE students SET prior_mem=? WHERE id=?', [$dir || $juz ? json_encode(['dir' => $dir, 'surah' => $ps, 'ayah' => $pa, 'juz' => $juz]) : null, $id]);
+        }
         foreach ($tids as $tid) q('INSERT INTO student_teacher (student_id,teacher_id) VALUES (?,?)', [$id, $tid]);
         q('DELETE FROM parent_student WHERE student_id=?', [$id]);
         foreach ($parents as $pid) q('INSERT INTO parent_student (parent_id,student_id) VALUES (?,?)', [$pid, $id]);
@@ -858,9 +891,8 @@ try {
         $tpls = $staff ? array_map(fn($t) => ['id' => (int)$t['id'], 'name' => $t['name'], 'data' => json_decode($t['data'], true), 'at' => $t['updated_at']],
             q('SELECT * FROM ijaza_tpl WHERE school_id=? ORDER BY id', [$sch])->fetchAll()) : [];
         [$w, $p2] = scope($u, 'student_id');
-        $list = array_map(fn($i) => ['id' => (int)$i['id'], 'serial' => $i['serial'], 'studentId' => (int)$i['student_id'], 'tplId' => $i['tpl_id'] ? (int)$i['tpl_id'] : null, 'kind' => $i['kind'],
-            'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'data' => json_decode($i['data'], true)],
-            q("SELECT * FROM ijazat WHERE $w ORDER BY id DESC", $p2)->fetchAll());
+        if (!$staff) $w = "($w) AND status='approved'";
+        $list = array_map('ijazaOut', q("SELECT * FROM ijazat WHERE $w ORDER BY id DESC", $p2)->fetchAll());
         out(['tpls' => $tpls, 'list' => $list]);
     }
     case 'ijaza_tpl_save': {
@@ -888,19 +920,31 @@ try {
         if ($id) {
             $row = $adm ? q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch() : q('SELECT * FROM ijazat WHERE id=? AND school_id=?', [$id, $sch])->fetch(); if (!$row) fail('غير موجود', 404);
             q('UPDATE ijazat SET data=?, title=?, kind=?, issued_at=?, tpl_id=? WHERE id=?', [$js, $title, $kind, $date, ($b['tplId'] ?? null) ?: null, $id]);
+            if ($u['role'] === 'teacher') q("UPDATE ijazat SET status='pending', approved_by=NULL WHERE id=?", [$id]);
         } else {
             $sid = (int)($b['studentId'] ?? 0); $s = q('SELECT * FROM students WHERE id=?', [$sid])->fetch();
             if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
             $sch = (int)$s['school_id'];
+            if (!isHafiz($s)) fail('لا تصدر الإجازة إلا لحافظ القرآن كاملاً. تستطيع إصدار شهادة بدلاً منها.');
+            if (!q("SELECT 1 FROM enrollments WHERE student_id=? AND status='completed' AND prior=0", [$sid])->fetchColumn() && empty($b['exception']))
+                fail('لم يُتمّ الطالب ختمة مسجّلة في المنصة. إن كان قرأ عليك خارجها فأكّد الاستثناء.');
             $al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
             do { $serial = 'IJ-' . date('Y') . '-'; for ($i = 0; $i < 6; $i++) $serial .= $al[random_int(0, strlen($al) - 1)]; }
             while (q('SELECT 1 FROM ijazat WHERE serial=?', [$serial])->fetchColumn());
             q('INSERT INTO ijazat (serial,school_id,student_id,tpl_id,kind,student_name,title,data,issued_at,issued_by) VALUES (?,?,?,?,?,?,?,?,?,?)',
                 [$serial, $sch, $sid, ($b['tplId'] ?? null) ?: null, $kind, str('student', 160) ?: $s['name'], $title, $js, $date, $u['id']]); $id = (int)db()->lastInsertId();
+            if ($u['role'] === 'teacher') q("UPDATE ijazat SET status='pending' WHERE id=?", [$id]);
+            audit('ijaza_issue', $s['name'] . (empty($b['exception']) ? '' : ' (استثناء: قراءة خارج المنصة)'), 'ijaza:' . $id);
         }
-        $i = q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch();
-        out(['ijaza' => ['id' => (int)$i['id'], 'serial' => $i['serial'], 'studentId' => (int)$i['student_id'], 'tplId' => $i['tpl_id'] ? (int)$i['tpl_id'] : null, 'kind' => $i['kind'],
-            'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'data' => json_decode($i['data'], true)]]);
+        out(['ijaza' => ijazaOut(q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch())]);
+    }
+    case 'ijaza_approve': {
+        $u = need('admin', 'school_admin'); $id = (int)(body()['id'] ?? 0);
+        $row = $u['role'] === 'admin' ? q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch() : q('SELECT * FROM ijazat WHERE id=? AND school_id=?', [$id, (int)$u['school_id']])->fetch();
+        if (!$row) fail('غير موجود', 404);
+        q("UPDATE ijazat SET status='approved', approved_by=? WHERE id=?", [$u['id'], $id]);
+        audit('ijaza_approve', $row['student_name'], 'ijaza:' . $id);
+        out(['ijaza' => ijazaOut(q('SELECT * FROM ijazat WHERE id=?', [$id])->fetch())]);
     }
     case 'ijaza_delete': {
         $u = need('admin', 'school_admin', 'teacher'); archive('ijaza', (int)(body()['id'] ?? 0), 'إجازة', (int)$u['school_id'], ['ijazat' => [$u['role'] === 'admin' ? 'id=?' : 'id=? AND school_id=' . (int)$u['school_id'], [(int)(body()['id'] ?? 0)]]]); if ($u['role'] === 'admin') q('DELETE FROM ijazat WHERE id=?', [(int)(body()['id'] ?? 0)]); else q('DELETE FROM ijazat WHERE id=? AND school_id=?', [(int)(body()['id'] ?? 0), (int)$u['school_id']]);
