@@ -734,13 +734,13 @@ function viewThread() {
 }
 /* اختيار جهة جديدة: قوائم بحسب مستواك، ثم محادثة قديمة إن وُجدت أو جديدة */
 function pickerHtml() {
-  const gs = db.contacts.groups, cur = gs.find(g => g.key === st.pg) || gs[0], q = normS(st.pq || '');
+  const gs = db.contacts.groups, cur = gs.find(g => g.key === st.pg) || gs.find(g => g.ids.length) || gs[0], q = normS(st.pq || '');
   const list = cur.ids.map(id => ({ id, i: cuInfo(id) })).filter(x => !q || normS(x.i.n + ' ' + x.i.sub).includes(q)).sort((a, b) => a.i.n.localeCompare(b.i.n, 'ar'));
   return `<h2>✉️ رسالة جديدة</h2>
   <div class="hscroll" style="margin-bottom:10px">${gs.map(g => `<button type="button" class="chip ${g.key === cur.key ? 'on' : ''}" data-act="pick-g" data-id="${g.key}">${esc(g.label)} (${g.ids.length})</button>`).join('')}</div>
   <input id="pk_q" type="search" placeholder="🔍 بحث بالاسم..." value="${esc(st.pq || '')}" style="margin-bottom:10px" autocomplete="off">
   <div class="list" id="pk_list" style="max-height:52vh;overflow:auto">${list.length ? list.map(({ id, i }) => `<div class="item" data-act="open-thread" data-id="${id}"><div class="avatar">${initial(i.n)}</div>
-    <div class="t"><b>${esc(i.n)}</b><small>${esc(cuRole(i))}${i.sub ? ' • ' + esc(i.sub) : ''}</small></div><div class="side">${dmOf(id).length ? '<small>💬 محادثة سابقة</small>' : ''}</div></div>`).join('') : empty('🔍', 'لا نتائج')}</div>
+    <div class="t"><b>${esc(i.n)}</b><small>${esc(cuRole(i))}${i.sub ? ' • ' + esc(i.sub) : ''}</small></div><div class="side">${dmOf(id).length ? '<small>💬 محادثة سابقة</small>' : ''}</div></div>`).join('') : empty('🔍', !q && !cur.ids.length && ['students', 'parents'].includes(cur.key) ? (cur.key === 'students' ? 'لا يوجد طلاب لديهم حساب دخول.<br>المراسلة تحتاج حساباً: افتح بيانات الطالب «تعديل»، واكتب اسم مستخدم في «دخول الطالب بنفسه» ثم احفظ.' : 'لا يوجد أولياء أمور مرتبطون.<br>أضف ولي الأمر من بيانات الطالب «تعديل».') : 'لا نتائج')}</div>
   <button type="button" class="btn light block" style="margin-top:10px" data-act="close">إغلاق</button>`;
 }
 function chatCfgHtml(sid) {
