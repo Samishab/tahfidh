@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS schools (
 
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  qiraat_list VARCHAR(400) NULL,
   username VARCHAR(190) NOT NULL,
   name VARCHAR(120) NOT NULL,
   role ENUM('admin','school_admin','teacher','parent','student') NOT NULL,

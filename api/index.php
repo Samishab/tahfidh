@@ -193,7 +193,7 @@ function msgOut(array $m): array {
 }
 function userOut(array $u): array {
     return ['id' => (int)$u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'],
-        'school_id' => $u['school_id'] ? (int)$u['school_id'] : null, 'phone' => $u['phone'] ?? '', 'email' => $u['email'] ?? '', 'active' => (bool)$u['active'], 'qiraat' => (bool)($u['qiraat'] ?? 0), 'solo' => (bool)($u['solo'] ?? 0),
+        'school_id' => $u['school_id'] ? (int)$u['school_id'] : null, 'phone' => $u['phone'] ?? '', 'email' => $u['email'] ?? '', 'active' => (bool)$u['active'], 'qiraat' => (bool)($u['qiraat'] ?? 0), 'qiraatList' => isset($u['qiraat_list']) ? array_values(array_filter(explode(',', $u['qiraat_list']))) : null, 'solo' => (bool)($u['solo'] ?? 0),
         'last_login' => $u['last_login'] ?? null];
 }
 const MSG_SQL = 'SELECT m.*, u.name sname, u.role srole FROM messages m LEFT JOIN users u ON u.id=m.sender_id';
@@ -676,7 +676,7 @@ try {
         $me = need('admin', 'school_admin'); $b = body(); $id = (int)($b['id'] ?? 0); $sa = $me['role'] === 'school_admin';
         $name = str('name', 120); $un = normUser(str('username', 190)); $phone = preg_replace('/[^\d+]/', '', str('phone', 30)); $email = strtolower(str('email', 190));
         $role = $b['role'] ?? ''; $school = (int)($b['school_id'] ?? 0) ?: null; $active = !isset($b['active']) || $b['active'] ? 1 : 0;
-        $qi = !empty($b['qiraat']) ? 1 : 0; $keepQ = 0; $isSolo = false; $newSolo = false;
+        $qi = array_key_exists('qiraat', $b) ? (!empty($b['qiraat']) ? 1 : 0) : null; $keepQ = 0; $isSolo = false; $newSolo = false;
         $sids = array_values(array_unique(array_map('intval', is_array($b['student_ids'] ?? null) ? $b['student_ids'] : [])));
         if ($name === '') fail('الاسم مطلوب');
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) fail('البريد الإلكتروني غير صحيح');
@@ -710,7 +710,7 @@ try {
         if ($school && !q('SELECT 1 FROM schools WHERE id=?', [$school])->fetchColumn()) fail('مدرسة غير صحيحة');
         if ($role === 'school_admin' && !$newSolo && q("SELECT 1 FROM users WHERE role='school_admin' AND school_id=? AND id<>?", [$school, $id])->fetchColumn())
             fail('لهذه المدرسة مدير بالفعل (مدير واحد لكل مدرسة)');
-        $qv = ($role === 'teacher' || $isSolo || $newSolo) ? $qi : $keepQ;
+        $qv = $qi !== null && ($role === 'teacher' || $isSolo || $newSolo) ? $qi : $keepQ;
         $pw = null; $mail = null;
         if ($id) {
             q('UPDATE users SET name=?, username=?, email=?, phone=?, school_id=?, active=?, qiraat=? WHERE id=?', [$name, $un, $email ?: null, $phone, $school, $active, $qv, $id]);
@@ -996,6 +996,24 @@ try {
         out(['ok' => true]);
     }
 
+    case 'set_riwayat': {   // الروايات التي يُقرئ بها: لنفسه (مدير/معلم مستقل) أو لمعلمي مدرسته
+        $u = need('admin', 'school_admin'); $b = body(); $uid = (int)($b['userId'] ?? 0) ?: (int)$u['id'];
+        $t = q('SELECT * FROM users WHERE id=?', [$uid])->fetch();
+        if (!$t || !in_array($t['role'], ['teacher', 'school_admin', 'admin'], true)) fail('مستخدم غير موجود', 404);
+        if ($u['role'] !== 'admin' && $uid !== (int)$u['id'] && !($t['role'] === 'teacher' && (int)$t['school_id'] === (int)$u['school_id'])) fail('غير مصرح', 403);
+        $new = array_values(array_unique(array_merge(['hafs'], array_intersect(RIWAYAT, is_array($b['list'] ?? null) ? array_map('strval', $b['list']) : []))));
+        $old = isset($t['qiraat_list']) ? array_filter(explode(',', $t['qiraat_list'])) : ($t['qiraat'] ? RIWAYAT : []);
+        $removed = array_diff($old, $new);
+        if ($removed) {
+            $busy = [];
+            foreach (q("SELECT s.id,s.name,e.riwayat,e.label FROM enrollments e JOIN students s ON s.id=e.student_id JOIN student_teacher st ON st.student_id=s.id WHERE st.teacher_id=? AND e.status='active' AND e.prior=0", [$uid])->fetchAll() as $e)
+                if (array_intersect(explode(',', $e['riwayat']), $removed)) $busy[] = $e['name'] . ' (' . $e['label'] . ')';
+            if ($busy) fail('لا تُزال رواية فيها ختمة جارية: ' . implode('، ', $busy));
+        }
+        q('UPDATE users SET qiraat_list=?, qiraat=? WHERE id=?', [implode(',', $new), count($new) > 1 ? 1 : 0, $uid]);
+        audit('set_riwayat', (string)count($new), 'user:' . $uid);
+        out(['user' => userOut(q('SELECT * FROM users WHERE id=?', [$uid])->fetch())]);
+    }
     case 'set_qiraat': {
         $u = need('admin', 'school_admin', 'teacher');
         q('UPDATE users SET qiraat=? WHERE id=?', [!empty(body()['on']) ? 1 : 0, $u['id']]);
@@ -1016,6 +1034,14 @@ try {
         if (!$s || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
         if (!qiraatAllowedFor($u, $sid)) fail('فعّل القراءات من «إعدادات القراءات» أولاً');
         $sd = validDate($b['started_at'] ?? null); $cd = validDate($b['completed_at'] ?? null); $shaykh = str('shaykh', 160); $note = str('note', 300);
+        if (!$id && empty($b['prior'])) {
+            $allowed = []; $open = false;
+            foreach (q('SELECT * FROM users WHERE id=? OR id IN (SELECT teacher_id FROM student_teacher WHERE student_id=?)', [$u['id'], $sid])->fetchAll() as $tu) {
+                if (isset($tu['qiraat_list'])) $allowed = array_merge($allowed, explode(',', $tu['qiraat_list'])); elseif ($tu['qiraat']) $open = true;
+            }
+            $miss = $open ? [] : array_diff(array_intersect(RIWAYAT, array_map('strval', is_array($b['riwayat'] ?? null) ? $b['riwayat'] : [])), $allowed);
+            if ($miss) fail('هذه الرواية ليست ضمن «رواياتي» للشيخ. أضفها من الإعدادات أولاً.');
+        }
         if ($id) {                                    // تعديل بيانات برنامج قائم
             $e = q('SELECT * FROM enrollments WHERE id=? AND student_id=?', [$id, $sid])->fetch();
             if (!$e) fail('البرنامج غير موجود', 404);

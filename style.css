@@ -568,3 +568,17 @@ input[type=search]{-webkit-appearance:none;appearance:none}
 @media (min-width:700px){.sa-bar{display:flex;flex-wrap:wrap}.sa-btn{flex-direction:row;font-size:13px;gap:6px;padding:7px 14px}.sa-btn span{font-size:15px}.sa-btn.main{font-size:13.5px;padding:7px 18px}.qgrid{grid-template-columns:repeat(5,1fr)}.hfz{grid-template-columns:1.2fr 1fr}}
 @media (min-width:960px){.mapgrid{grid-template-columns:1.4fr 1fr}.juzmap{grid-template-columns:repeat(10,1fr)}}
 @media (max-width:430px){.shd-st{grid-template-columns:repeat(6,1fr)}.shd-st div{grid-column:span 2}.shd-st div:nth-child(n+4){grid-column:span 3}}
+
+/* ---------- صفحة الإعدادات ---------- */
+.sg-h{font-size:14px;margin:4px 2px 8px;color:var(--g1)}
+.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+.stile{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:10px 8px;font:inherit;cursor:pointer;display:grid;justify-items:center;align-content:start;gap:1px;text-align:center;box-shadow:var(--sh)}.stile:hover{border-color:var(--g2)}
+.stile .ic{font-size:24px;position:relative;line-height:1.4}.stile .ic .bdg{position:absolute;top:-2px;inset-inline-start:-14px;font-style:normal}.stile b{font-size:13.5px;color:var(--g1)}.stile small{font-size:11.5px;color:var(--mut);line-height:1.4}
+.sec-h{display:flex;align-items:center;gap:10px;margin-bottom:10px;background:#fff;border-radius:14px;padding:8px 10px;box-shadow:var(--sh)}.sec-h b{font-size:16px;color:var(--g1)}
+.rwchip{cursor:pointer}.rwchip input{position:absolute;opacity:0;pointer-events:none}.rwchip span{display:inline-block;font-size:12px!important;padding:3px 10px!important}.rwchip input:checked+span{background:var(--g2)!important;color:#fff!important}.rwchip input:disabled+span{opacity:.85;cursor:default}
+.tile.late{border-color:var(--gold)}
+.stats.hs{grid-template-columns:repeat(2,1fr)}
+.rp-kpis{grid-template-columns:repeat(6,1fr)!important}
+@media (min-width:700px){.sgrid{grid-template-columns:repeat(4,1fr)}.stats.hs{grid-template-columns:repeat(4,1fr)}}
+@media screen and (max-width:640px){.rptwrap .rp-kpis{grid-template-columns:repeat(6,1fr)!important}}
+.rwchip,.juzpick label{position:relative}.rwchip input,.juzpick input{width:1px!important;height:1px!important;padding:0!important;margin:0!important;border:0!important;top:0;right:0}

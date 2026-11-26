@@ -384,6 +384,7 @@ function ijIssueForm(sid, editId) {
       <div style="flex:2"><label class="f">اسم المجاز (من بيانات الطالب)</label><input name="name" value="${esc(V.name || s.name)}" required maxlength="160"></div></div>
     <div><label class="f">العمل / الوظيفة</label><input name="job" value="${esc(V.job || '')}" maxlength="160" placeholder="مثال: مهندس شبكات كمبيوتر"></div>
     <div><label class="f">الإقامة</label><input name="res" value="${esc(V.res || '')}" maxlength="160" placeholder="مثال: المقيم: أبها - المملكة العربية السعودية"></div>
+    ${enrOf(s.id).some(e => e.status === 'completed') ? `<div><label class="f">الرواية المجاز فيها <span class="hint">(من ختماته المنجزة)</span></label><select name="enr"><option value="">—</option>${enrOf(s.id).filter(e => e.status === 'completed').map(e => `<option value="${e.id}" ${+V.enr === e.id ? 'selected' : ''}>${esc(e.label)}</option>`).join('')}</select></div>` : ''}
     <div><label class="f">تفاصيل أوقات القراءة <span class="hint">(اختياري — تظهر في نص الإجازة)</span></label><textarea name="sessions" rows="3" maxlength="800" placeholder="مثال: وقد قرأ عليّ في الفترة من ... إلى ...">${esc(V.sessions || '')}</textarea></div>
     <div><label class="f">القراءة <span class="hint">(اتركها فارغة لتؤخذ من النموذج)</span></label><textarea name="reading" rows="3" maxlength="600">${esc(V.reading || '')}</textarea></div>
     <div class="row"><div><label class="f">تاريخ الإجازة</label><input type="date" name="date" value="${esc(rec ? rec.date : today())}"></div><div><label class="f">المكان</label><input name="place" value="${esc(V.place || '')}" maxlength="80"></div></div>
@@ -449,7 +450,7 @@ document.addEventListener('submit', async e => {
       }
     } else {
       const sid = +f.dataset.sid, id = +f.dataset.id || 0, g = n => f.elements[n] && f.elements[n].value.trim();
-      const V = { name: g('name'), honor: g('honor'), job: g('job'), res: g('res'), sessions: g('sessions'), reading: g('reading'), place: g('place'), date: g('date') };
+      const V = { enr: g('enr') || '', name: g('name'), honor: g('honor'), job: g('job'), res: g('res'), sessions: g('sessions'), reading: g('reading'), place: g('place'), date: g('date') };
       let T, tplId = null;
       if (id) { const rec = IJ.list.find(i => i.id === id); T = rec.data.T; tplId = rec.tplId; } else { const tp = IJ.tpls.find(t => t.id === +g('tpl')); if (!tp) throw new Error('اختر النموذج'); T = { ...ijDefault(), ...tp.data, inc: { ...ijDefault().inc, ...(tp.data.inc || {}) } }; tplId = tp.id; }
       const kind = g('kind'), title = kind === 'short' ? 'إجازة مختصرة' : 'إجازة بقراءة القرآن الكريم';

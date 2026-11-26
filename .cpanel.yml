@@ -2,4 +2,4 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home/ipickhos/tahfidh.ipickhost.com/
-    - /bin/cp -R index.html style.css app.js quran.js report.js extras.js admin.js ijaza.js ijaza_marghani.js sw.js fonts manifest.json icon.svg api $DEPLOYPATH
+    - /bin/cp -R index.html style.css app.js quran.js report.js extras.js admin.js ijaza.js settings.js ijaza_marghani.js sw.js fonts manifest.json icon.svg api $DEPLOYPATH

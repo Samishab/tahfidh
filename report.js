@@ -74,7 +74,7 @@ function reportSheet(s, off, rg) {
 
   <div class="rp-kpis">
     ${kpi('📖', g.h, 'آيات الحفظ', '#14956b')}${kpi('🔁', g.r, 'آيات المراجعة', '#d4a437')}${kpi('🗓', `${days}<small>/${m.days}</small>`, 'أيام التسميع', '#3b7ddd')}
-    ${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('🏅', avgLbl, 'متوسط التقدير', '#12a150')}</div>
+    ${g.q ? kpi('📚', g.q, 'آيات القراءة', '#6b73d6') : kpi('🎙', g.n, 'عدد التسميعات', '#6b73d6')}${kpi('📄', num(recs.filter(r => !r.redo).reduce((x, r) => x + rPages(r), 0)), 'الصفحات', '#0b5d45')}${kpi('🏅', avgLbl, 'متوسط التقدير', '#12a150')}</div>
 
   <div class="rp-row">
     <div class="rp-box rp-w2"><h3>📈 ${wk ? 'النشاط الأسبوعي' : 'النشاط اليومي'} <span><i style="background:#14956b"></i>حفظ <i style="background:#d4a437"></i>مراجعة</span></h3><div class="rp-chart">${svgBars(per)}</div></div>
