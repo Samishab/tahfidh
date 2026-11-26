@@ -190,7 +190,7 @@ function progCard(s) {
     ${staff() ? `<div class="side">${e.status === 'active' ? `<button class="btn light sm" data-act="enr-done" data-id="${e.id}">أتمّها</button>` : `<button class="btn light sm" data-act="enr-reopen" data-id="${e.id}">إعادة فتح</button>`}<button class="btn red sm" data-act="enr-del" data-id="${e.id}" style="margin-top:4px">حذف</button></div>` : ''}</div>`;
   return `<div class="card"><h3>🎓 البرنامج والقراءات ${staff() ? `<button class="more" data-act="edit-hafiz" data-id="${s.id}">✏️ بيانات الحفظ</button>` : ''}</h3>
     <p class="hint" style="margin:0 0 8px">البرنامج: <b>${s.program === 'qiraat' ? '📚 قراءات' : '📖 حفظ ومراجعة'}</b></p>
-    ${s.hafiz ? `<div class="info" style="text-align:start;margin-bottom:10px">✅ حافظ للمصحف${s.hafizWhere ? ' — أتمّه: ' + esc(s.hafizWhere) : ''}${s.hafizNote ? `<br><small>${esc(s.hafizNote)}</small>` : ''}</div>` : ''}
+    ${s.hafiz && s.hafizNote ? `<p class="hint" style="margin:0 0 8px">📝 ${esc(s.hafizNote)}</p>` : ''}
     ${staff() && can ? `<div class="row" style="margin-bottom:10px"><button class="btn gold sm" data-act="enr-new" data-id="${s.id}">＋ برنامج قراءة</button><button class="btn ghost sm" data-act="enr-prior" data-id="${s.id}">＋ قراءة سابقة</button></div>` : (staff() ? '<p class="hint">لإضافة برنامج قراءات يفعّل المعلم «إعدادات القراءات» من حسابه.</p>' : '')}
     ${act.length ? `<h3 style="font-size:14px;margin:6px 0">البرامج الجارية</h3><div class="list" style="margin-bottom:10px">${act.map(row).join('')}</div>` : ''}
   </div>`;

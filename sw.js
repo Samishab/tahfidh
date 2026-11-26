@@ -1,4 +1,4 @@
-const CACHE = 'tahfidh-v72';
+const CACHE = 'tahfidh-v73';
 const ASSETS = ['./', 'index.html', 'style.css', 'quran.js', 'app.js', 'report.js', 'extras.js', 'admin.js', 'ijaza.js', 'icon.svg', 'manifest.json'];
 
 self.addEventListener('install', e => {
@@ -11,7 +11,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin) || e.request.url.includes('/api/')) return;
   e.respondWith(
-    fetch(e.request).then(r => {
+    fetch(e.request, { cache: 'no-cache' }).then(r => {
       const copy = r.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return r;
