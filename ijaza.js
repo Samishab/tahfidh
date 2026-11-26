@@ -334,13 +334,43 @@ const ijHafiz = s => s.hafiz || memorized(s.id, '', true).reduce((x, y) => x + y
 const ijDone = s => enrOf(s.id).some(e => e.status === 'completed' && !e.prior);
 function ijCard(s) {
   ijLoad();
-  const mine = IJ.list.filter(i => i.studentId === s.id);
-  if (!staff() && !mine.length) return '';
-  return `<div class="card"><h3>📜 الإجازات (${mine.length}) ${staff() && ijHafiz(s) ? `<button class="more" data-act="ij-new" data-id="${s.id}">＋ إصدار إجازة</button>` : ''}</h3>
+  const mine = IJ.list.filter(i => i.studentId === s.id), ext = (db.extIjazat || []).filter(x => x.studentId === s.id);
+  if (!staff() && !mine.length && !ext.length) return '';
+  const can = staff() && ijHafiz(s);
+  return `<div class="card"><h3>📜 الإجازات (${mine.length + ext.length}) ${can ? `<button class="more" data-act="ij-new" data-id="${s.id}">＋ إصدار إجازة</button>` : ''}</h3>
     ${staff() && !ijHafiz(s) ? '<p class="hint" style="margin:0 0 8px">🔒 الإجازة لحافظ القرآن كاملاً فقط. الشهادات متاحة للجميع.</p>' : ''}
-    ${mine.length ? `<div class="list">${mine.map(i => `<div class="item" data-act="ij-open" data-id="${i.id}"><div class="avatar">📜</div><div class="t"><b>${esc(i.title || (i.kind === 'short' ? 'إجازة مختصرة' : 'إجازة'))}${i.status === 'pending' ? ' <span class="badge b-rev">⏳ بانتظار الاعتماد</span>' : ''}</b><small>${i.kind === 'short' ? 'ورقة واحدة' : 'كاملة'} • ${esc(i.date)}</small></div></div>`).join('')}</div>` : '<p class="hint">لم تُصدر له إجازة بعد.</p>'}
-    ${staff() ? `<button class="btn light block sm" style="margin-top:8px" data-act="ij-tpls">⚙️ نماذج الإجازة وأسانيدها</button>` : ''}</div>`;
+    ${mine.length || ext.length ? `<div class="tiles">${mine.map(i => `<div class="tile plat" data-act="ij-open" data-id="${i.id}"><span>📜</span><div><b>${esc(i.title || 'إجازة')}</b><small>من المنصة • ${i.kind === 'short' ? 'ورقة واحدة' : 'كاملة'} • ${esc(i.date)}${i.status === 'pending' ? ' • ⏳ بانتظار الاعتماد' : ''}</small></div></div>`).join('')}
+      ${ext.map(x => `<div class="tile ext" data-act="ext-open" data-id="${x.id}"><span>📎</span><div><b>${esc(x.title)}</b><small>من خارج المنصة • ${esc(x.fromWho)}${x.date ? ' • ' + esc(x.date) : ''}${x.hasFile ? ' • مرفق ملف' : ''}</small></div></div>`).join('')}</div>` : '<p class="hint" style="margin:0">لا توجد إجازات مسجلة</p>'}
+    ${staff() ? `<button class="btn light sm" style="margin-top:8px" data-act="ext-new" data-id="${s.id}">📎 تسجيل إجازة من خارج المنصة</button>` : ''}</div>`;
 }
+function extForm(sid, x) {
+  modal(`<h2>📎 ${x ? 'إجازة من خارج المنصة' : 'تسجيل إجازة من خارج المنصة'}</h2>
+  <form id="extform" class="gap" data-sid="${sid}" data-id="${x ? x.id : ''}">
+    <div><label class="f">بمَ أُجيز؟</label><input name="title" required maxlength="200" value="${esc(x?.title || '')}" placeholder="مثال: إجازة برواية ورش عن نافع"></div>
+    <div><label class="f">الروايات المشمولة <span class="hint">(اختياري — لتظهر في شبكة القراءات)</span></label><details ${x && x.riwayat.length ? 'open' : ''}><summary class="hint" style="cursor:pointer">اختيار الروايات</summary><div class="jamgrid">${QURRA.map(([, qn, rs]) => `<div style="border:1.5px solid var(--line);border-radius:10px;padding:6px"><b>${qn}</b>${rs.map(r => `<label class="row" style="gap:6px"><input type="checkbox" name="xrw" value="${r[0]}" style="width:auto;flex:none" ${x && x.riwayat.includes(r[0]) ? 'checked' : ''}> ${r[1]}</label>`).join('')}</div>`).join('')}</div></details></div>
+    <div><label class="f">الشيخ المجيز</label><input name="fromWho" required maxlength="200" value="${esc(x?.fromWho || '')}"></div>
+    <div class="row"><div><label class="f">المكان <span class="hint">(اختياري)</span></label><input name="place" maxlength="160" value="${esc(x?.place || '')}"></div><div><label class="f">التاريخ <span class="hint">(اختياري)</span></label><input type="date" name="date" value="${esc(x?.date || '')}"></div></div>
+    <div><label class="f">ملف الإجازة <span class="hint">(اختياري — PDF أو صورة، حتى 4 ميجا)</span></label><input type="file" name="file" accept="application/pdf,image/jpeg,image/png">${x && x.hasFile ? `<a class="btn ghost sm" style="margin-top:6px" target="_blank" rel="noopener" href="api/index.php?r=ext_file&id=${x.id}">📄 فتح الملف المرفق: ${esc(x.fileName)}</a>` : ''}</div>
+    ${staff() ? '<button class="btn block gold">حفظ</button>' : ''}
+    ${x && staff() ? `<button type="button" class="btn red block" data-act="ext-del" data-id="${x.id}">🗑 حذف</button>` : ''}
+    <button type="button" class="btn light block" data-act="close">إغلاق</button>
+  </form>`);
+}
+Object.assign(acts, {
+  'ext-new': id => extForm(+id, null),
+  'ext-open': id => { const x = (db.extIjazat || []).find(v => v.id === +id); if (!x) return; if (staff()) return extForm(x.studentId, x); if (x.hasFile) window.open('api/index.php?r=ext_file&id=' + x.id, '_blank', 'noopener'); },
+  'ext-del': async id => { if (!confirm('حذف هذه الإجازة؟ تبقى محفوظة في المحذوفات.')) return; await api('ext_delete', { id: +id }); db.extIjazat = db.extIjazat.filter(v => v.id !== +id); closeModal(); render(); toast('تم الحذف'); },
+});
+document.addEventListener('submit', async e => {
+  const f = e.target; if (f.id !== 'extform') return;
+  e.preventDefault(); e.stopPropagation();
+  try {
+    const fl = f.elements.file.files[0]; let file = null;
+    if (fl) { if (fl.size > 4 * 1024 * 1024) throw new Error('حجم الملف أكبر من 4 ميجا'); const data = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(new Error('تعذرت قراءة الملف')); r.readAsDataURL(fl); }); file = { name: fl.name, data }; }
+    const r = await api('ext_save', { id: +f.dataset.id || 0, studentId: +f.dataset.sid, title: f.elements.title.value, fromWho: f.elements.fromWho.value, place: f.elements.place.value, date: f.elements.date.value, riwayat: [...f.querySelectorAll('[name=xrw]:checked')].map(i => i.value), file });
+    db.extIjazat = (db.extIjazat || []).filter(v => v.id !== r.item.id).concat(r.item); closeModal(); render(); toast('تم الحفظ ✔');
+  } catch (err) { toast(err.message || 'تعذر الحفظ'); }
+});
 function ijIssueForm(sid, editId) {
   const s = student(sid), rec = editId ? IJ.list.find(i => i.id === editId) : null, V = rec ? rec.data.V : {};
   if (!IJ.tpls.length && !rec) { toast('أنشئ نموذج إجازة أولاً من «نماذج الإجازة»'); st.ijBack = 'student'; return acts['ij-tpls'](); }

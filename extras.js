@@ -183,9 +183,8 @@ function readingsDone(sid) {
   return { rows, qurra: rows.filter(r => r.n === r.tot).length, riwayat: ALL20.filter(k => done.has(k)).length };
 }
 function progCard(s) {
-  const es = enrOf(s.id), act = es.filter(e => e.status === 'active' && !e.prior), dn = es.filter(e => e.status === 'completed'), can = canQiraat(s);
+  const es = enrOf(s.id), act = es.filter(e => e.status === 'active' && !e.prior), can = canQiraat(s);
   if (!(s.hafiz || es.length || s.program === 'qiraat' || (staff() && can))) return '';
-  const rd = readingsDone(s.id);
   const row = e => `<div class="item" style="cursor:default"><div class="avatar">${e.status === 'completed' ? '✅' : '📚'}</div>
     <div class="t"><b>${esc(e.label)}</b><small>${e.status === 'completed' ? 'أتمّها' + (e.completedAt ? ' ' + fmtG(parse(e.completedAt)) : '') + (e.prior ? ' • قبل الالتحاق' : '') + (e.shaykh ? ' • ' + esc(e.shaykh) : '') : 'جارية' + (e.startedAt ? ' منذ ' + fmtG(parse(e.startedAt)) : '')}${e.note ? ' • ' + esc(e.note) : ''}</small></div>
     ${staff() ? `<div class="side">${e.status === 'active' ? `<button class="btn light sm" data-act="enr-done" data-id="${e.id}">أتمّها</button>` : `<button class="btn light sm" data-act="enr-reopen" data-id="${e.id}">إعادة فتح</button>`}<button class="btn red sm" data-act="enr-del" data-id="${e.id}" style="margin-top:4px">حذف</button></div>` : ''}</div>`;
@@ -194,13 +193,24 @@ function progCard(s) {
     ${s.hafiz ? `<div class="info" style="text-align:start;margin-bottom:10px">✅ حافظ للمصحف${s.hafizWhere ? ' — أتمّه: ' + esc(s.hafizWhere) : ''}${s.hafizNote ? `<br><small>${esc(s.hafizNote)}</small>` : ''}</div>` : ''}
     ${staff() && can ? `<div class="row" style="margin-bottom:10px"><button class="btn gold sm" data-act="enr-new" data-id="${s.id}">＋ برنامج قراءة</button><button class="btn ghost sm" data-act="enr-prior" data-id="${s.id}">＋ قراءة سابقة</button></div>` : (staff() ? '<p class="hint">لإضافة برنامج قراءات يفعّل المعلم «إعدادات القراءات» من حسابه.</p>' : '')}
     ${act.length ? `<h3 style="font-size:14px;margin:6px 0">البرامج الجارية</h3><div class="list" style="margin-bottom:10px">${act.map(row).join('')}</div>` : ''}
-    ${dn.length ? `<details class="dn-det" data-tg="dnOpen" ${st.dnOpen ? 'open' : ''}><summary>✅ القراءات المنجزة (${dn.length})</summary>
+  </div>`;
+}
+/* القراءات المنجزة: شبكة مضغوطة للقراء العشرة، تميّز ما أُجيز فيه من المنصة (📜) ومن خارجها (📎) */
+function readingsCard(s) {
+  const es = enrOf(s.id), dn = es.filter(e => e.status === 'completed'), ext = (db.extIjazat || []).filter(x => x.studentId === s.id);
+  if (!dn.length && !ext.length) return '';
+  const rd = readingsDone(s.id), keys = list => new Set(list.flatMap(x => x.riwayat || []));
+  const done = keys(dn), outK = keys(ext);
+  const inK = new Set((typeof IJ !== 'undefined' ? IJ.list : []).filter(i => i.studentId === s.id && i.status !== 'pending').flatMap(i => (enrById(i.data?.V?.enr) || {}).riwayat || []));
+  return `<div class="card"><h3>🎓 القراءات المنجزة <span class="hint">${rd.qurra} من 10 قراء • ${rd.riwayat} من 20 رواية</span></h3>
+    <div class="qgrid">${QURRA.map(([, qn, rs]) => `<div class="qc ${rs.every(r => done.has(r[0])) ? 'all' : ''}"><b>${qn}</b><div>${rs.map(r => `<span class="${done.has(r[0]) ? 'on' : ''}">${inK.has(r[0]) ? '📜 ' : outK.has(r[0]) ? '📎 ' : done.has(r[0]) ? '✓ ' : ''}${r[1]}</span>`).join('')}</div></div>`).join('')}</div>
+    <p class="hint" style="margin:8px 0 0">✓ منجزة • 📜 مجاز فيها من المنصة • 📎 مجاز فيها من خارجها</p>
+    ${dn.length ? `<details class="dn-det" data-tg="dnOpen" ${st.dnOpen ? 'open' : ''}><summary>📋 التفاصيل: الشيوخ والتواريخ (${dn.length})</summary>
       <div class="tw"><table class="rt rt2 dn"><tr><th style="text-align:start">القراءة</th><th style="text-align:start">الشيخ</th><th>تاريخ البدء</th><th>تاريخ الإكمال</th>${staff() ? '<th></th>' : ''}</tr>
       ${dn.map(en => `<tr><td style="text-align:start"><b>${esc(en.label)}</b>${en.prior ? ' <small class="hint">• قبل الالتحاق</small>' : ''}</td><td class="nt" style="text-align:start" title="${esc(en.shaykh)}">${en.shaykh ? esc(en.shaykh) : '<span class="hint">—</span>'}</td>
         <td>${en.startedAt ? fmtDMY(parse(en.startedAt)) : '<span class="hint">—</span>'}</td><td>${en.completedAt ? fmtDMY(parse(en.completedAt)) : '<span class="hint">—</span>'}</td>
         ${staff() ? `<td class="ra"><button class="ib" data-act="enr-reopen" data-id="${en.id}" title="إعادة فتح">↩</button><button class="ib" data-act="enr-del" data-id="${en.id}" title="حذف">🗑</button></td>` : ''}</tr>`).join('')}</table></div>
-      <div class="info" style="text-align:start;margin-top:10px"><b>🏅 أتمّ ${rd.qurra} من 10 قراء • ${rd.riwayat} من 20 رواية</b>
-      <div class="chips" style="margin-top:8px">${rd.rows.map(r => `<span class="chip static ${r.n === r.tot ? 'on' : ''}" style="${r.n && r.n < r.tot ? 'border-color:var(--gold)' : ''}">${r.qn}${r.n && r.n < r.tot ? ' ½' : ''}</span>`).join('')}</div></div></details>` : ''}
+</details>` : ''}
   </div>`;
 }
 function enrollForm(sid, prior) {

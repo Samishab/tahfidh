@@ -137,6 +137,13 @@ function isHafiz(array $s): bool {
     foreach ($p['juz'] ?? [] as $j) { $from = $abs($juz[$j - 1][0], $juz[$j - 1][1]); $mark($from, $j < 30 ? $abs($juz[$j][0], $juz[$j][1]) - 1 : $before[114]); }
     return count($m) >= $before[114];
 }
+function ensureExt(): void {
+    q("CREATE TABLE IF NOT EXISTS ext_ijazat (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, student_id INT UNSIGNED NOT NULL, title VARCHAR(200) NOT NULL, riwayat VARCHAR(400) NOT NULL DEFAULT '', from_who VARCHAR(200) NOT NULL, place VARCHAR(160) NOT NULL DEFAULT '', issued_at DATE NULL, file_name VARCHAR(160) NULL, file_mime VARCHAR(60) NULL, file_data MEDIUMBLOB NULL, created_by INT UNSIGNED NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, deleted_at DATETIME NULL, deleted_by INT UNSIGNED NULL, KEY k (student_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+const EXT_COLS = 'id,student_id,title,riwayat,from_who,place,issued_at,file_name';
+function extOut(array $x): array {
+    return ['id' => (int)$x['id'], 'studentId' => (int)$x['student_id'], 'title' => $x['title'], 'riwayat' => $x['riwayat'] === '' ? [] : explode(',', $x['riwayat']), 'fromWho' => $x['from_who'], 'place' => $x['place'], 'date' => $x['issued_at'] ?? '', 'hasFile' => !empty($x['file_name']), 'fileName' => $x['file_name'] ?? ''];
+}
 function ijazaOut(array $i): array {
     return ['id' => (int)$i['id'], 'serial' => $i['serial'], 'studentId' => (int)$i['student_id'], 'tplId' => $i['tpl_id'] ? (int)$i['tpl_id'] : null, 'kind' => $i['kind'],
         'student' => $i['student_name'], 'title' => $i['title'], 'date' => $i['issued_at'], 'status' => $i['status'] ?? 'approved', 'data' => json_decode($i['data'], true)];
@@ -336,6 +343,7 @@ function bootstrap(array $u): array {
     $res = ['me' => userOut($u) + ['must_change' => (bool)$u['must_change']], 'school' => $school, 'schools' => $schools,
         'students' => $stOut, 'records' => $recs, 'messages' => $msgs, 'reads' => (object)$reads, 'users' => [],
         'certs' => array_map('certOut', q("SELECT * FROM certificates WHERE student_id IN ($in) ORDER BY id DESC")->fetchAll()),
+        'extIjazat' => (function () use ($in) { ensureExt(); return array_map('extOut', q('SELECT ' . EXT_COLS . " FROM ext_ijazat WHERE deleted_at IS NULL AND student_id IN ($in) ORDER BY id")->fetchAll()); })(),
         'enrollments' => array_map('enrOut', q("SELECT * FROM enrollments WHERE student_id IN ($in) ORDER BY id")->fetchAll())];
     $ct = dmContacts($u);
     $dm = array_reverse(array_map('dmOut', q('SELECT * FROM dm WHERE a=? OR b=? ORDER BY id DESC LIMIT 1500', [$u['id'], $u['id']])->fetchAll()));
@@ -594,6 +602,43 @@ try {
             else q('INSERT INTO schools (name,logo,plan,expires_at,max_students,active,notes) VALUES (?,?,?,?,?,?,?)', [$name, $logo, $plan, $exp, $maxs, $act, $notes]);
         } else q('UPDATE schools SET name=?, logo=? WHERE id=?', [$name, $logo, $id]);
         audit('school_save', $name, 'school:' . $id);
+        out(['ok' => true]);
+    }
+    case 'ext_save': {
+        $u = need('admin', 'school_admin', 'teacher'); ensureExt(); $b = body(); $id = (int)($b['id'] ?? 0); $sid = (int)($b['studentId'] ?? 0);
+        if ($id) $sid = (int)q('SELECT student_id FROM ext_ijazat WHERE id=? AND deleted_at IS NULL', [$id])->fetchColumn();
+        if (!$sid || !canSee($u, $sid)) fail('الطالب غير موجود', 404);
+        $title = str('title', 200); $who = str('fromWho', 200); if ($title === '' || $who === '') fail('اكتب نوع الإجازة واسم الشيخ المجيز');
+        $rw = implode(',', array_values(array_intersect(RIWAYAT, is_array($b['riwayat'] ?? null) ? array_map('strval', $b['riwayat']) : [])));
+        $vals = [$title, $rw, $who, str('place', 160), validDate($b['date'] ?? null) ?: null];
+        $file = null;
+        if (!empty($b['file']['data'])) {
+            $raw = base64_decode(preg_replace('/^data:[^,]*,/', '', (string)$b['file']['data']), true);
+            if ($raw === false || strlen($raw) > 4 * 1024 * 1024) fail('الملف غير صالح أو أكبر من 4 ميجا');
+            $mime = str_starts_with($raw, '%PDF') ? 'application/pdf' : (str_starts_with($raw, "\xFF\xD8\xFF") ? 'image/jpeg' : (str_starts_with($raw, "\x89PNG") ? 'image/png' : ''));
+            if (!$mime) fail('المسموح: PDF أو صورة JPG / PNG');
+            $file = [mb_substr(basename((string)($b['file']['name'] ?? 'ijaza')), 0, 160), $mime, $raw];
+        }
+        if ($id) q('UPDATE ext_ijazat SET title=?, riwayat=?, from_who=?, place=?, issued_at=? WHERE id=?', [...$vals, $id]);
+        else { q('INSERT INTO ext_ijazat (title,riwayat,from_who,place,issued_at,student_id,created_by) VALUES (?,?,?,?,?,?,?)', [...$vals, $sid, $u['id']]); $id = (int)db()->lastInsertId(); }
+        if ($file) q('UPDATE ext_ijazat SET file_name=?, file_mime=?, file_data=? WHERE id=?', [...$file, $id]);
+        audit('ext_ijaza_save', $title, 'student:' . $sid);
+        out(['item' => extOut(q('SELECT ' . EXT_COLS . ' FROM ext_ijazat WHERE id=?', [$id])->fetch())]);
+    }
+    case 'ext_file': {
+        $u = need('admin', 'school_admin', 'teacher', 'parent', 'student'); ensureExt();
+        $x = q('SELECT student_id,file_name,file_mime,file_data FROM ext_ijazat WHERE id=? AND deleted_at IS NULL', [(int)($_GET['id'] ?? 0)])->fetch();
+        if (!$x || !$x['file_data'] || !canSee($u, (int)$x['student_id'])) fail('غير موجود', 404);
+        header_remove('Content-Type'); header('Content-Type: ' . $x['file_mime']); header('X-Content-Type-Options: nosniff');
+        header("Content-Disposition: inline; filename*=UTF-8''" . rawurlencode($x['file_name'])); header('Cache-Control: private, no-store');
+        echo $x['file_data']; exit;
+    }
+    case 'ext_delete': {
+        $u = need('admin', 'school_admin', 'teacher'); ensureExt(); $id = (int)(body()['id'] ?? 0);
+        $sid = (int)q('SELECT student_id FROM ext_ijazat WHERE id=?', [$id])->fetchColumn();
+        if (!$sid || !canSee($u, $sid)) fail('غير مصرح', 403);
+        q('UPDATE ext_ijazat SET deleted_at=NOW(), deleted_by=? WHERE id=?', [$u['id'], $id]);
+        audit('ext_ijaza_delete', 'student:' . $sid, 'ext:' . $id);
         out(['ok' => true]);
     }
     case 'trash_list': {

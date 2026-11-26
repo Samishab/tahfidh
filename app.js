@@ -150,6 +150,26 @@ function memorized(sid, enr, raw) {
 }
 const rPages = r => Q.pages(r.surah, r.from, r.to, rEnd(r));
 const pgText = r => { const p = rPages(r); return p % 1 ? (Math.floor(p) ? Math.floor(p) + '½' : '½') : String(p); };
+const num = x => Number.isInteger(x) ? x : x.toFixed(1);
+const maskPages = m => { let h = 0; for (let i = 0; i < m.length; i++) if (m[i]) h += PG_E[i] - PG_S[i]; return Math.round(h / 10) / 10; };
+const weekPages = sid => { const ws = weekStart(new Date()), a = ymd(ws), b = ymd(addDays(ws, 6)); return db.records.filter(r => r.studentId === sid && r.date >= a && r.date <= b).reduce((x, r) => x + rPages(r), 0); };
+// مؤشرات المتابعة بجانب خريطة الأجزاء
+function followRows(s, cur, recs, m) {
+  const ym = today().slice(0, 7), month = recs.filter(r => r.date.slice(0, 7) === ym);
+  const from = ymd(addDays(new Date(), -27)), perWeek = recs.filter(r => r.date >= from && !r.redo).reduce((x, r) => x + rPages(r), 0) / 4;
+  const gr = recs.map(r => GP[r.grade]).filter(Boolean), avg = gr.length ? gr.reduce((x, y) => x + y, 0) / gr.length : 0;
+  const best = avg ? GRADES.reduce((a, g) => GP[g] && Math.abs(GP[g] - avg) < Math.abs(GP[a] - avg) ? g : a, GRADES[0]) : '—';
+  const left = 604 - maskPages(m), weeks = perWeek ? Math.ceil(left / perWeek) : 0;
+  return [['أيام التسميع هذا الشهر', new Set(month.map(r => r.date)).size], ['صفحات هذا الشهر', num(month.reduce((x, r) => x + rPages(r), 0))],
+    ['متوسط الصفحات أسبوعياً (4 أسابيع)', num(Math.round(perWeek * 10) / 10)], ['متوسط التقدير', best], ['المتبقي من الصفحات', num(Math.round(left * 10) / 10)],
+    ['الختم المتوقع بهذا المعدل', weeks && weeks < 520 ? fmtG(addDays(new Date(), weeks * 7)) : '—']];
+}
+function hafizCard(s, cur, total) {
+  const e = cur ? enrById(cur) : null, rd = readingsDone(s.id);
+  return `<div class="card hfz"><div class="hfz-seal"><small>﴿ بَلْ هُوَ آيَاتٌ بَيِّنَاتٌ فِي صُدُورِ الَّذِينَ أُوتُوا الْعِلْمَ ﴾</small><b>حافظٌ لكتاب الله</b><i>${esc(s.name)}</i>${s.hafizWhere ? `<small>${esc(s.hafizWhere)}</small>` : ''}</div>
+    <div class="hfz-side">${e ? `<div><span>${e.status === 'completed' ? '✅ ختمة منجزة' : '📚 الختمة الجارية'}</span><b>${esc(e.label)}</b><div class="pbar"><i style="width:${Math.max(total * 100 / Q.TOTAL, 1)}%"></i></div><small>${(total * 100 / Q.TOTAL).toFixed(1)}%</small></div>` : ''}
+      <div><span>القراءات المنجزة</span><b>${rd.qurra} من 10 قراء • ${rd.riwayat} من 20 رواية</b></div></div></div>`;
+}
 const typeAr = r => ({ hifz: 'حفظ', review: 'مراجعة', qiraa: 'قراءة' }[r.type]);
 const typeCls = r => ({ hifz: 'h', review: 'r', qiraa: 'q' }[r.type]);
 const qiraatOn = () => staff() && !!db.me.qiraat;
@@ -619,36 +639,46 @@ function viewStudent() {
   const scoped = recs.filter(r => cur ? r.type === 'qiraa' && String(r.enrollmentId) === cur : r.type !== 'qiraa');
   const lastH = lastOf(s.id, cur ? 'qiraa' : 'hifz', cur), t = tObj(s), un = unread(s.id);
   const back = staff() ? 'students' : (db.students.length > 1 ? 'home' : '');
+  const prog = scoped.filter(r => r.type !== 'review');
+  const certs = db.certs.filter(c => c.studentId === s.id);
+  const ready = staff() && memorized(s.id, '', true).reduce((x, y) => x + y, 0) === Q.TOTAL && !certs.some(c => c.kind === 'khatm');
+  const doneEnr = staff() ? enrOf(s.id).filter(e => e.status === 'completed' && !e.prior && !certs.some(c => c.enrollmentId === e.id)) : [];
+  const hafiz = ijHafiz(s);
+  const actBtn = (act, ico, label, cls = '') => `<button class="sa-btn ${cls}" data-act="${act}" data-id="${act === 'nav' ? 'messages' : s.id}"><span>${ico}</span>${label}</button>`;
   return `
-  <div class="card">
-    <div class="row" style="margin-bottom:12px">${back ? `<button class="btn light sm auto" data-act="nav" data-id="${back}">→ رجوع</button>` : ''}<span></span>
-      ${isMgr() ? `<button class="btn light sm auto" data-act="edit-student" data-id="${s.id}">✏️ تعديل</button>` : ''}</div>
-    <div class="item" style="border:0;padding:0;cursor:default"><div class="avatar">${initial(s.name)}</div>
-      <div class="t"><b style="font-size:19px">${esc(s.name)}</b><small>${[schoolName(s.school_id), s.group, t ? ((s.teachers || []).length > 1 ? 'المعلمون: ' : 'المعلم: ') + t.name : ''].filter(Boolean).map(esc).join(' • ')}</small></div></div>
+  <div class="card shd">
+    <div class="shd-id">
+      ${back ? `<button class="btn light sm auto" data-act="nav" data-id="${back}" title="رجوع">→</button>` : ''}
+      <div class="avatar">${initial(s.name)}</div>
+      <div class="t"><b>${esc(s.name)}</b><small>${[schoolName(s.school_id), s.group, t ? ((s.teachers || []).length > 1 ? 'المعلمون: ' : 'المعلم: ') + t.name : ''].filter(Boolean).map(esc).join(' • ')}</small></div>
+      ${isMgr() ? `<button class="btn light sm auto" data-act="edit-student" data-id="${s.id}" title="بيانات الطالب وإعداداته">⚙️</button>` : ''}
+    </div>
+    <div class="shd-st">
+      <div><b>${total}</b><span>${cur ? 'آية من الختمة' : 'آية محفوظة'}</span></div>
+      <div><b>${num(maskPages(m))}</b><span>${cur ? 'صفحة من الختمة' : 'صفحة محفوظة'}</span></div>
+      <div><b>${(total * 100 / Q.TOTAL).toFixed(1)}%</b><span>من القرآن</span></div>
+      <div><b>${w.h + w.r + w.q}</b><span>آيات الأسبوع</span></div>
+      <div><b>${num(weekPages(s.id))}</b><span>صفحات الأسبوع</span></div>
+    </div>
+    ${lastH ? `<div class="shd-last">📍 آخر موضع ${cur ? 'قراءة' : 'حفظ'}: <b>${recText(lastH)}</b></div>` : ''}
   </div>
-  ${tabs.length > 1 ? `<div class="card"><h3>📚 البرنامج</h3><div class="chips">${tabs.map(x => `<button class="chip ${x.k === cur ? 'on' : ''}" data-act="pe" data-id="${x.k}">${esc(x.l)}</button>`).join('')}</div></div>` : ''}
+  <div class="sa-bar">
+    ${staff() ? actBtn('quick', '＋', 'تسميع جديد', 'main') : actBtn('chat-teacher', '💬', 'مراسلة المعلم', 'main')}
+    ${actBtn('open-report', '📄', 'التقرير الشهري')}${actBtn('open-stmt', '📑', 'كشف التسميع')}${staff() ? actBtn('report', '📤', 'تقرير الأسبوع') + actBtn('nav', '💬', 'الرسائل') : ''}
+  </div>
+  ${tabs.length > 1 ? `<div class="chips ptabs">${tabs.map(x => `<button class="chip ${x.k === cur ? 'on' : ''}" data-act="pe" data-id="${x.k}">${esc(x.l)}</button>`).join('')}</div>` : ''}
+  ${hafiz ? hafizCard(s, cur, total) : `<div class="mapgrid">
+    <div class="card"><h3>🗺 خريطة الأجزاء <span class="hint">${juz.filter(p => p === 100).length} جزءاً كاملاً</span></h3>
+      <div class="juzmap">${juz.map((p, i) => `<div class="${p === 100 ? 'full' : p ? 'part' : ''}" style="--p:${p}%" title="الجزء ${i + 1}: ${p}%"><b>${i + 1}</b><small>${p ? p + '%' : '·'}</small></div>`).join('')}</div></div>
+    <div class="card"><h3>📊 المتابعة</h3><div class="kv">${followRows(s, cur, prog, m).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}</div></div>
+  </div>`}
   ${progCard(s)}
-  <div class="stats">
-    <div class="stat"><b>${total}</b><span>${cur ? 'آية قُرئت من الختمة' : 'آية محفوظة'}</span></div>
-    <div class="stat gold"><b>${(total * 100 / Q.TOTAL).toFixed(1)}%</b><span>من القرآن</span></div>
-    <div class="stat blue"><b>${w.h + w.r + w.q}</b><span>آيات الأسبوع</span></div>
-  </div>
-  <div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="open-report" data-id="${s.id}">📄 التقرير الشهري</button><button class="btn ghost" data-act="open-stmt" data-id="${s.id}">📑 كشف التسميع</button></div>
-  <div class="row" style="margin-bottom:14px">
-    ${staff() ? `<button class="btn gold" data-act="quick" data-id="${s.id}">＋ تسميع جديد</button><button class="btn ghost" data-act="report" data-id="${s.id}">📤 تقرير الأسبوع</button>`
-      : `<button class="btn gold" data-act="chat-teacher" data-id="${s.id}">💬 مراسلة المعلم</button>`}
-  </div>
-  ${staff() ? `<div class="row" style="margin:-4px 0 14px"><button class="btn light" data-act="nav" data-id="messages">💬 الرسائل</button></div>` : ''}
-  <div class="card"><h3>🗺 خريطة الأجزاء</h3>
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${juz.map((p, i) => `<div style="text-align:center;font-size:12px;border:1.5px solid ${p ? 'var(--g2)' : 'var(--line)'};border-radius:12px;padding:6px 0;background:linear-gradient(to top,${p === 100 ? 'var(--g2)' : 'var(--g3)'} ${p}%,#fff ${p}%);color:${p === 100 ? '#fff' : 'var(--ink)'}"><b>${i + 1}</b><br><small>${p}%</small></div>`).join('')}</div>
-    <p class="hint">اللون الممتلئ = الجزء محفوظ بالكامل</p></div>
-  ${lastH ? `<div class="card"><h3>📍 آخر موضع ${cur ? 'قراءة' : 'حفظ'}</h3><div style="font-family:Amiri,serif;font-size:21px;color:var(--g1);font-weight:700">${recText(lastH)}</div></div>` : ''}
-  ${ijCard(s)}
-  ${(() => { const cs = db.certs.filter(c => c.studentId === s.id), ready = staff() && memorized(s.id, '', true).reduce((x, y) => x + y, 0) === Q.TOTAL && !cs.some(c => c.kind === 'khatm'), doneEnr = staff() ? enrOf(s.id).filter(e => e.status === 'completed' && !cs.some(c => c.enrollmentId === e.id)) : [];
-    return `<div class="card"><h3>🏆 الشهادات (${cs.length}) ${staff() ? `<button class="more" data-act="cert-new" data-id="${s.id}">＋ إصدار شهادة</button>` : ''}</h3>
+  <div class="card"><h3>🏆 الشهادات (${certs.length}) ${staff() ? `<button class="more" data-act="cert-new" data-id="${s.id}">＋ إصدار شهادة</button>` : ''}</h3>
     ${ready ? '<div class="info" style="margin-bottom:10px">🎉 أتمّ حفظ المصحف كاملاً — يمكنك إصدار شهادة الختم</div>' : ''}
     ${doneEnr.map(e => `<div class="info" style="margin-bottom:10px;text-align:start">🎉 أتمّ ${esc(e.label)} <button class="btn gold sm" style="margin-top:6px" data-act="cert-enr" data-id="${e.id}" data-sid="${s.id}">إصدار شهادة</button></div>`).join('')}
-    ${cs.length ? `<div class="list">${cs.map(c => `<div class="item" data-act="open-cert" data-id="${c.id}"><div class="avatar">🏆</div><div class="t"><b>${esc(c.title)}</b><small>${fmtG(parse(c.date))} • ${esc(c.serial)}</small></div></div>`).join('')}</div>` : empty('🏅', 'لا توجد شهادات بعد')}</div>`; })()}
+    ${certs.length ? `<div class="tiles">${certs.map(c => `<div class="tile" data-act="open-cert" data-id="${c.id}"><span>🏆</span><div><b>${esc(c.title)}</b><small>${fmtG(parse(c.date))}</small></div></div>`).join('')}</div>` : '<p class="hint" style="margin:0">لا توجد شهادات بعد</p>'}</div>
+  ${ijCard(s)}
+  ${readingsCard(s)}
   <div class="card"><h3>🕘 جدول التسميع (${st.recAll ? recs.length : scoped.length}) <button class="more" data-act="rec-all">${st.recAll ? 'عرض البرنامج الحالي فقط' : 'عرض كل التسميعات (' + recs.length + ')'}</button></h3>${st.recAll ? '' : `<p class="hint" style="margin:0 0 8px">${cur && enrById(cur) ? esc(enrById(cur).label) : 'الحفظ والمراجعة'} — آخر التسميعات في برنامجه الحالي</p>`}
     ${recTable(st.recAll ? recs : scoped, { limit: 80 })}</div>`;
 }
